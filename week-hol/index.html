@@ -2,9 +2,1533 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>week-hol</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>시간 여행 등불</title>
+<style>
+  :root {
+    --night: #05060f;
+    --panel: rgba(14, 15, 30, 0.9);
+    --line: #33375f;
+    --text: #f1f2ff;
+    --muted: #a9aed6;
+    --gold: #ffcf5a;
+    --good: #5fd38a;
+    --bad: #ff7a7a;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--night);
+    color: var(--text);
+    font-family: "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+    overflow: hidden;
+  }
+  #stage {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    user-select: none;
+    touch-action: manipulation;
+  }
+  #stage.explore { touch-action: none; }
+  #stage.shake { animation: shake 0.25s; }
+  @keyframes shake {
+    25% { transform: translate(-6px, 3px); }
+    75% { transform: translate(6px, -3px); }
+  }
+
+  /* 배경 그림 */
+  #bg { position: absolute; inset: 0; transition: opacity 0.9s; }
+  #bg svg { width: 100%; height: 100%; display: block; }
+  #bg.fade { opacity: 0; }
+  #fx, #dark { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  #flash { position: absolute; inset: 0; background: #fff8dc; opacity: 0; pointer-events: none; transition: opacity 0.6s; }
+  #flash.on { opacity: 1; transition: opacity 0.15s; }
+
+  /* SVG 움직임 */
+  .flame { transform-box: fill-box; transform-origin: 50% 100%; animation: flick 0.35s ease-in-out infinite alternate; }
+  .flame.slow { animation-duration: 0.5s; }
+  @keyframes flick { to { transform: scale(0.88, 1.12) skewX(4deg); } }
+  .glass { animation: glass 3s ease-in-out infinite alternate; }
+  @keyframes glass { from { opacity: 0.55; } to { opacity: 1; } }
+  .wave { animation: wave 9s linear infinite; }
+  .wave.w2 { animation-duration: 6s; }
+  .wave.w3 { animation-duration: 4s; }
+  @keyframes wave { to { transform: translateX(-500px); } }
+  .bob { transform-box: fill-box; transform-origin: 50% 100%; animation: bob 4.5s ease-in-out infinite; }
+  @keyframes bob { 50% { transform: translateY(7px) rotate(0.8deg); } }
+  .float { transform-box: fill-box; transform-origin: center; animation: float 3.2s ease-in-out infinite; }
+  @keyframes float { 50% { transform: translateY(-9px) rotate(-6deg); } }
+  .twinkle { animation: twinkle 2.4s ease-in-out infinite alternate; }
+  @keyframes twinkle { from { opacity: 0.2; } to { opacity: 1; } }
+  .fog { animation: fog 26s linear infinite alternate; }
+  @keyframes fog { to { transform: translateX(120px); } }
+  .spark path { transform-box: fill-box; transform-origin: center; animation: spark 1.3s ease-in-out infinite; }
+  @keyframes spark { 0%, 100% { transform: scale(0.5) rotate(0deg); opacity: 0.5; } 50% { transform: scale(1.15) rotate(45deg); opacity: 1; } }
+  .hs.got .spark { display: none; }
+  #stage.explore .hs { cursor: pointer; }
+  #theses { transform-box: fill-box; transform-origin: 50% 0; transition: all 0.15s; }
+
+  /* 위쪽 상태 표시 */
+  #hud {
+    position: absolute;
+    top: max(12px, env(safe-area-inset-top));
+    left: 16px;
+    right: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    z-index: 5;
+    opacity: 0;
+    transition: opacity 0.5s;
+  }
+  #hud.show { opacity: 1; }
+  #lanternIcon { font-size: 30px; filter: drop-shadow(0 0 8px var(--gold)); transition: filter 0.8s; }
+  .meter { flex: 1; max-width: 260px; }
+  .meter small { color: var(--muted); font-size: 12px; }
+  .bar { height: 8px; background: rgba(255, 255, 255, 0.12); border-radius: 99px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #c98a1b, var(--gold)); transition: width 0.8s; }
+  .hud-btn {
+    margin-left: auto;
+    display: flex;
+    gap: 6px;
+  }
+  .chip {
+    font: inherit;
+    font-size: 13px;
+    color: var(--text);
+    background: rgba(14, 15, 30, 0.75);
+    border: 1px solid var(--line);
+    border-radius: 99px;
+    padding: 6px 10px;
+    cursor: pointer;
+  }
+
+  /* 탐색 안내 */
+  #hint {
+    position: absolute;
+    top: calc(max(12px, env(safe-area-inset-top)) + 48px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(92vw, 560px);
+    text-align: center;
+    background: rgba(14, 15, 30, 0.8);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 10px 14px;
+    font-size: 15px;
+    z-index: 5;
+    display: none;
+  }
+  #hint b { color: var(--gold); }
+
+  /* 시대 제목 */
+  #titleCard {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.8s;
+    z-index: 6;
+    padding: 16px;
+  }
+  #titleCard.show { opacity: 1; }
+  #titleCard small { color: var(--gold); letter-spacing: 3px; font-size: 15px; }
+  #titleCard h1 { font-size: clamp(30px, 7vw, 54px); margin: 10px 0 0; text-shadow: 0 0 30px rgba(255, 207, 90, 0.5); }
+
+  /* 대화창 */
+  #dialog {
+    position: absolute;
+    left: 50%;
+    bottom: max(14px, env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    width: min(calc(100vw - 32px), 860px);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    padding: 16px 18px;
+    display: none;
+    gap: 14px;
+    z-index: 7;
+    cursor: pointer;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+  }
+  #dialog.show { display: flex; }
+  #portrait { width: 92px; height: 92px; flex: none; }
+  #portrait:empty { display: none; }
+  #portrait svg { width: 100%; height: 100%; }
+  .dlg-body { flex: 1; min-width: 0; }
+  #who { font-weight: bold; color: var(--gold); margin-bottom: 4px; min-height: 1em; }
+  #text { font-size: 17px; line-height: 1.7; min-height: 3.4em; white-space: pre-line; }
+  #dialog.narr #text { color: #dfe2ff; font-style: italic; }
+  #dialog.diary #text { color: #f3e3b5; font-family: "Batang", serif; }
+  #next { text-align: right; color: var(--gold); font-size: 13px; opacity: 0; }
+  #dialog.ready #next { opacity: 1; animation: blink 1s infinite; }
+  @keyframes blink { 50% { opacity: 0.3; } }
+  #choices { display: grid; gap: 8px; margin-top: 10px; }
+  #choices:empty { display: none; }
+  #choices button {
+    font: inherit;
+    font-size: 15px;
+    color: var(--text);
+    text-align: left;
+    background: #1c1f3c;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 10px 14px;
+    cursor: pointer;
+  }
+  #choices button:hover:not(:disabled) { border-color: var(--gold); }
+  #choices button.right { background: rgba(95, 211, 138, 0.2); border-color: var(--good); }
+  #choices button.wrong { background: rgba(255, 122, 122, 0.16); border-color: var(--bad); }
+  #choices button .ref { display: block; color: var(--gold); font-size: 13px; }
+
+  /* 망치 · 그림자 */
+  #hammerBox {
+    position: absolute;
+    left: 50%;
+    bottom: 22%;
+    transform: translateX(-50%);
+    text-align: center;
+    z-index: 6;
+    display: none;
+  }
+  #hammerBtn {
+    font-size: 54px;
+    background: rgba(255, 207, 90, 0.15);
+    border: 2px solid var(--gold);
+    border-radius: 50%;
+    width: 110px;
+    height: 110px;
+    cursor: pointer;
+  }
+  #hammerBtn:active { transform: rotate(-30deg) scale(0.95); }
+  #hammerCount { margin-top: 8px; font-size: 18px; color: var(--gold); text-shadow: 0 0 10px #000; }
+  #shadowBox {
+    position: absolute;
+    left: 50%;
+    top: 12%;
+    width: min(60vw, 340px);
+    transform: translateX(-50%) scale(var(--s, 1));
+    transition: transform 0.5s, opacity 0.8s;
+    z-index: 4;
+    display: none;
+    filter: drop-shadow(0 0 30px rgba(130, 70, 200, 0.6));
+  }
+  #shadowBox svg { width: 100%; }
+  #shadowHp { text-align: center; color: #c9a6ff; font-size: 14px; margin-top: 4px; }
+
+  /* 토스트 · 패널 */
+  #toast {
+    position: absolute;
+    top: 30%;
+    left: 50%;
+    transform: translate(-50%, 10px);
+    background: rgba(40, 30, 5, 0.92);
+    border: 1px solid var(--gold);
+    color: var(--gold);
+    padding: 10px 18px;
+    border-radius: 99px;
+    font-size: 15px;
+    opacity: 0;
+    transition: all 0.4s;
+    z-index: 9;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(5, 6, 15, 0.82);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    z-index: 10;
+  }
+  .overlay.show { display: flex; }
+  .sheet {
+    width: min(100%, 620px);
+    max-height: 88vh;
+    overflow-y: auto;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    padding: 24px 22px;
+    line-height: 1.7;
+  }
+  .sheet h1 { margin: 4px 0 10px; font-size: clamp(26px, 6vw, 38px); }
+  .sheet h2 { font-size: 18px; margin: 18px 0 8px; color: var(--gold); }
+  .sheet .tag { color: var(--gold); letter-spacing: 2px; font-size: 14px; }
+  .sheet p { margin: 0 0 10px; }
+  .muted { color: var(--muted); }
+  .card-item { border-left: 3px solid var(--gold); padding: 6px 12px; margin-bottom: 8px; background: rgba(255, 207, 90, 0.06); border-radius: 0 10px 10px 0; }
+  .card-item b { color: var(--gold); font-size: 14px; }
+  .endings { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+  .endings div { border: 1px solid var(--line); border-radius: 12px; padding: 8px; text-align: center; font-size: 14px; }
+  .endings .got { border-color: var(--gold); color: var(--gold); }
+  .big-btn {
+    display: block;
+    width: 100%;
+    margin-top: 16px;
+    font: inherit;
+    font-weight: bold;
+    font-size: 17px;
+    padding: 14px;
+    border: none;
+    border-radius: 14px;
+    background: var(--gold);
+    color: #2a1d00;
+    cursor: pointer;
+  }
+  .big-btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+  #start .sheet { text-align: center; background: rgba(14, 15, 30, 0.7); }
+  #start h1 { font-size: clamp(36px, 9vw, 60px); text-shadow: 0 0 40px rgba(255, 207, 90, 0.6); }
+  .start-lantern { font-size: 70px; filter: drop-shadow(0 0 30px var(--gold)); animation: blink 2.5s infinite; }
+
+  @media (max-width: 600px) {
+    #portrait { width: 62px; height: 62px; }
+    #text { font-size: 15px; }
+    #dialog { padding: 12px 14px; gap: 10px; }
+    #choices button { font-size: 14px; padding: 9px 12px; }
+  }
+</style>
 </head>
 <body>
+<div id="stage">
+  <div id="bg"></div>
+  <canvas id="fx"></canvas>
+  <canvas id="dark"></canvas>
+  <div id="flash"></div>
+  <div id="shadowBox"><div id="shadowArt"></div><div id="shadowHp"></div></div>
+
+  <div id="hud">
+    <div id="lanternIcon">🏮</div>
+    <div class="meter">
+      <small>등불의 밝기 <span id="lightNum">0</span>%</small>
+      <div class="bar"><i id="lightBar"></i></div>
+    </div>
+    <div class="hud-btn">
+      <button class="chip" id="cardBtn">📖 0</button>
+      <button class="chip" id="diaryBtn">📜 0/5</button>
+      <button class="chip" id="soundBtn">🔊</button>
+    </div>
+  </div>
+  <div id="hint"></div>
+  <div id="titleCard"><small id="titleTag"></small><h1 id="titleText"></h1></div>
+
+  <div id="hammerBox">
+    <button id="hammerBtn">🔨</button>
+    <div id="hammerCount">0 / 95</div>
+  </div>
+
+  <div id="dialog">
+    <div id="portrait"></div>
+    <div class="dlg-body">
+      <div id="who"></div>
+      <div id="text"></div>
+      <div id="choices"></div>
+      <div id="next">눌러서 계속 ▼</div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+  <div class="overlay" id="panel"><div class="sheet" id="panelBody"></div></div>
+  <div class="overlay show" id="start">
+    <div class="sheet">
+      <div class="start-lantern">🏮</div>
+      <div class="tag">기독교 역사 여행 게임</div>
+      <h1>시간 여행 등불</h1>
+      <p>할로윈 밤, 할머니 다락방에서 찾은 낡은 등불.<br>그 빛을 따라 할로윈의 뿌리를 찾아 2천 년을 여행하세요.</p>
+      <p class="muted">🔊 소리가 나와요 · 마우스나 손가락으로 어둠을 비춰요</p>
+      <p class="muted" id="startEndings"></p>
+      <button class="big-btn" id="startBtn">▶ 여행 시작하기</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ───────────── 효과음 (파일 없이 코드로 만든 소리) ───────────── */
+const sound = {
+  ctx: null, master: null, noiseBuf: null, amb: [], timers: [], muted: false,
+  init() {
+    if (this.ctx) return;
+    try {
+      const C = window.AudioContext || window.webkitAudioContext;
+      this.ctx = new C();
+      this.master = this.ctx.createGain();
+      this.master.gain.value = 0.8;
+      this.master.connect(this.ctx.destination);
+      const len = this.ctx.sampleRate * 2;
+      this.noiseBuf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+      const d = this.noiseBuf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    } catch (e) { this.ctx = null; }
+  },
+  tone(f, dur, type = "sine", vol = 0.15, delay = 0) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime + delay;
+    const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+    o.type = type; o.frequency.value = f;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(this.master);
+    o.start(t); o.stop(t + dur + 0.05);
+  },
+  noise(dur, freq, type = "lowpass", vol = 0.2, delay = 0) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime + delay;
+    const s = this.ctx.createBufferSource(), f = this.ctx.createBiquadFilter(), g = this.ctx.createGain();
+    s.buffer = this.noiseBuf; f.type = type; f.frequency.value = freq;
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    s.connect(f).connect(g).connect(this.master);
+    s.start(t); s.stop(t + dur + 0.05);
+  },
+  blip() { this.tone(520 + Math.random() * 80, 0.04, "square", 0.02); },
+  good() { [660, 880, 1100].forEach((f, i) => this.tone(f, 0.3, "triangle", 0.12, i * 0.08)); },
+  bad() { this.tone(200, 0.35, "sawtooth", 0.05); this.tone(140, 0.45, "sawtooth", 0.05, 0.1); },
+  find() { [1046, 1318, 1568, 2093].forEach((f, i) => this.tone(f, 0.35, "sine", 0.08, i * 0.06)); },
+  bell() { [1, 2, 2.76, 5.4].forEach((m, i) => this.tone(392 * m, 3 - i * 0.5, "sine", 0.12 / (i + 1))); },
+  hammer() { this.noise(0.12, 500, "lowpass", 0.6); this.tone(90, 0.15, "sine", 0.3); },
+  whoosh() { this.noise(1.2, 900, "bandpass", 0.25); },
+  stopAmb() {
+    this.amb.forEach(n => { try { n.stop && n.stop(); } catch (e) {} try { n.disconnect(); } catch (e) {} });
+    this.amb = [];
+    this.timers.forEach(clearInterval);
+    this.timers = [];
+  },
+  loopNoise(freq, type, vol) {
+    const s = this.ctx.createBufferSource(), f = this.ctx.createBiquadFilter(), g = this.ctx.createGain();
+    s.buffer = this.noiseBuf; s.loop = true; f.type = type; f.frequency.value = freq; g.gain.value = vol;
+    s.connect(f).connect(g).connect(this.master); s.start();
+    this.amb.push(s, f, g);
+    return g;
+  },
+  lfo(param, rate, depth) {
+    const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+    o.frequency.value = rate; g.gain.value = depth;
+    o.connect(g).connect(param); o.start();
+    this.amb.push(o, g);
+  },
+  drone(f, vol) {
+    const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+    o.frequency.value = f; g.gain.value = vol;
+    o.connect(g).connect(this.master); o.start();
+    this.amb.push(o, g);
+  },
+  ambient(kind) {
+    if (!this.ctx) return;
+    this.stopAmb();
+    if (kind === "wind") {
+      this.lfo(this.loopNoise(450, "bandpass", 0.05).gain, 0.13, 0.03);
+    } else if (kind === "fire") {
+      this.loopNoise(220, "lowpass", 0.05);
+      this.timers.push(setInterval(() => {
+        if (Math.random() < 0.6) this.noise(0.03, 3000, "highpass", 0.07 * Math.random());
+      }, 90));
+    } else if (kind === "waves") {
+      this.lfo(this.loopNoise(650, "lowpass", 0.09).gain, 0.12, 0.07);
+    } else if (kind === "drone") {
+      this.drone(110, 0.02); this.drone(164.8, 0.015); this.drone(220, 0.008);
+    } else if (kind === "city") {
+      this.loopNoise(280, "lowpass", 0.035);
+    } else if (kind === "dark") {
+      this.drone(55, 0.05); this.drone(58, 0.04);
+    }
+  },
+  setMuted(m) {
+    this.muted = m;
+    if (this.master) this.master.gain.value = m ? 0 : 0.8;
+  }
+};
+
+/* ───────────── 배경 그림 (SVG) ───────────── */
+const rnd = (a, b) => a + Math.random() * (b - a);
+
+function stars(n, maxY) {
+  let s = "";
+  for (let i = 0; i < n; i++) {
+    s += `<circle class="twinkle" cx="${rnd(0, 1000)}" cy="${rnd(0, maxY)}" r="${rnd(0.6, 2)}" fill="#fff" style="animation-delay:${rnd(0, 2.4)}s"/>`;
+  }
+  return s;
+}
+function spark(x, y, size = 11) {
+  const s = size, k = size * 0.25;
+  return `<g class="spark" transform="translate(${x},${y})"><path d="M0 ${-s} L${k} ${-k} L${s} 0 L${k} ${k} L0 ${s} L${-k} ${k} L${-s} 0 L${-k} ${-k}Z" fill="#fff6c8"/></g>`;
+}
+// 단서가 숨어 있는 곳: 그림 + 누를 수 있는 동그라미 + 반짝이
+function hs(id, x, y, art, r = 40, size = 11) {
+  return `<g class="hs" data-id="${id}">${art}<circle class="hit" cx="${x}" cy="${y}" r="${r}" fill="transparent"/>${spark(x + r * 0.5, y - r * 0.6, size)}</g>`;
+}
+function svgWrap(inner, defs = "") {
+  return `<svg viewBox="0 0 1000 600" preserveAspectRatio="xMidYMid slice"><defs>${defs}</defs>${inner}</svg>`;
+}
+const glowDef = (id, color) =>
+  `<radialGradient id="${id}"><stop offset="0" stop-color="${color}" stop-opacity="0.75"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></radialGradient>`;
+const fireAt = (x, y, s = 1) => `
+  <circle cx="${x}" cy="${y - 20 * s}" r="${90 * s}" fill="url(#fireGlow)"/>
+  <path d="M${x - 22 * s} ${y} L${x + 22 * s} ${y - 8 * s} M${x - 20 * s} ${y - 8 * s} L${x + 24 * s} ${y}" stroke="#3b2210" stroke-width="${7 * s}"/>
+  <path class="flame" d="M${x - 20 * s} ${y - 4 * s} Q${x - 18 * s} ${y - 40 * s} ${x} ${y - 70 * s} Q${x + 18 * s} ${y - 40 * s} ${x + 20 * s} ${y - 4 * s}Z" fill="#ff7a1a"/>
+  <path class="flame slow" d="M${x - 11 * s} ${y - 4 * s} Q${x - 9 * s} ${y - 28 * s} ${x} ${y - 46 * s} Q${x + 9 * s} ${y - 28 * s} ${x + 11 * s} ${y - 4 * s}Z" fill="#ffd34d"/>`;
+
+const SCENES = {
+  attic: () => svgWrap(`
+    <rect width="1000" height="600" fill="url(#aw)"/>
+    <path d="M0 150 L500 20 L1000 150" stroke="#3a2617" stroke-width="28" fill="none"/>
+    <path d="M0 250 L500 120 L1000 250" stroke="#2f1f13" stroke-width="16" fill="none"/>
+    <rect x="110" y="120" width="26" height="380" fill="#3a2617"/>
+    <rect x="864" y="120" width="26" height="380" fill="#3a2617"/>
+    <polygon points="455,200 545,200 720,560 280,560" fill="#aabfff" opacity="0.07"/>
+    <circle cx="500" cy="160" r="62" fill="#17223f" stroke="#3a2617" stroke-width="10"/>
+    <circle cx="520" cy="145" r="16" fill="#f3eccd"/>
+    <path d="M438 160 H562 M500 98 V222" stroke="#3a2617" stroke-width="7"/>
+    <rect y="480" width="1000" height="120" fill="#20150d"/>
+    <path d="M0 520 H1000 M0 560 H1000 M150 480 V520 M420 520 V560 M700 480 V520 M880 520 V560" stroke="#2c1d12" stroke-width="3"/>
+    <rect x="150" y="390" width="160" height="95" fill="#5a3d22" stroke="#3a2617" stroke-width="4"/>
+    <rect x="180" y="330" width="100" height="62" fill="#6a4a2a" stroke="#3a2617" stroke-width="4"/>
+    <path d="M150 430 H310 M230 330 V392" stroke="#8a6a40" stroke-width="6"/>
+    <path d="M140 40 L250 120 M140 40 L170 140 M140 40 L215 75" stroke="#776" stroke-width="1" opacity="0.4"/>
+    <path d="M560 410 Q645 370 730 410 V485 H560Z" fill="#4a2c16" stroke="#2a180a" stroke-width="4"/>
+    <path d="M560 430 H730 M600 400 V485 M690 400 V485" stroke="#8a6a2a" stroke-width="5"/>
+    ${hs("lantern", 645, 365, `
+      <path d="M635 340 Q645 326 655 340" stroke="#b08a3a" stroke-width="3" fill="none"/>
+      <rect x="630" y="341" width="30" height="6" fill="#8a6a2a"/>
+      <rect x="633" y="347" width="24" height="30" fill="#ffd27a" opacity="0.45" stroke="#8a6a2a" stroke-width="3"/>
+      <rect x="630" y="377" width="30" height="6" fill="#8a6a2a"/>`, 42)}`,
+    `<linearGradient id="aw" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2b1d14"/><stop offset="1" stop-color="#140d08"/></linearGradient>`),
+
+  celtic: () => svgWrap(`
+    <rect width="1000" height="600" fill="url(#csky)"/>
+    ${stars(90, 300)}
+    <circle cx="830" cy="105" r="110" fill="url(#moonGlow)"/>
+    <circle cx="830" cy="105" r="36" fill="#f3eccd"/>
+    <path d="M0 330 Q150 255 300 295 T600 275 T1000 300 V600 H0Z" fill="#151b38"/>
+    <path d="M170 600 Q350 330 500 318 Q650 330 830 600Z" fill="#0f1529"/>
+    <rect x="410" y="290" width="16" height="34" fill="#0a0e1d"/>
+    <rect x="574" y="292" width="16" height="32" fill="#0a0e1d"/>
+    <rect x="440" y="300" width="12" height="24" fill="#0a0e1d"/>
+    <rect x="548" y="300" width="12" height="24" fill="#0a0e1d"/>
+    ${fireAt(500, 322, 1.2)}
+    <rect x="115" y="405" width="120" height="70" fill="#2a1d14"/>
+    <polygon points="95,415 175,330 255,415" fill="#3b2a16"/>
+    <path d="M120 400 L175 340 M150 410 L178 345 M205 410 L176 345 M232 402 L177 340" stroke="#4d3820" stroke-width="3"/>
+    <rect x="160" y="430" width="30" height="45" fill="#120c08"/>
+    <rect x="790" y="415" width="95" height="58" fill="#261a12"/>
+    <polygon points="772,423 838,352 904,423" fill="#352513"/>
+    <path d="M0 470 Q500 438 1000 470 V600 H0Z" fill="#0b1020"/>
+    <ellipse class="fog" cx="250" cy="420" rx="320" ry="40" fill="#cdd6ff" opacity="0.06"/>
+    <ellipse class="fog" cx="760" cy="455" rx="300" ry="35" fill="#cdd6ff" opacity="0.05"/>
+    ${hs("hearth", 300, 500, `
+      <ellipse cx="300" cy="505" rx="34" ry="11" fill="#555a66"/>
+      <circle cx="268" cy="503" r="8" fill="#6c6f7a"/><circle cx="332" cy="503" r="8" fill="#6c6f7a"/>
+      <circle cx="285" cy="514" r="7" fill="#5f626d"/><circle cx="316" cy="514" r="7" fill="#5f626d"/>`)}
+    ${hs("mask", 760, 395, `
+      <rect x="757" y="395" width="6" height="80" fill="#3b2a16"/>
+      <ellipse cx="760" cy="392" rx="24" ry="30" fill="#d9cfb8"/>
+      <ellipse cx="751" cy="386" rx="6" ry="8" fill="#1a1a1a"/><ellipse cx="769" cy="386" rx="6" ry="8" fill="#1a1a1a"/>
+      <path d="M744 404 Q760 414 776 404 M748 372 L756 398 M772 372 L766 398" stroke="#555" stroke-width="2" fill="none"/>`)}
+    ${hs("bowl", 440, 520, `
+      <path d="M410 510 Q440 545 470 510Z" fill="#6b4425"/>
+      <circle cx="428" cy="506" r="9" fill="#c0392b"/><circle cx="446" cy="503" r="9" fill="#d35400"/><circle cx="458" cy="508" r="8" fill="#c0392b"/>`)}
+    ${hs("diary1", 905, 525, `
+      <path d="M870 545 Q880 500 915 505 Q945 512 940 545Z" fill="#3c4152"/>
+      <rect x="896" y="518" width="14" height="10" fill="#e8dcb5" transform="rotate(-12 903 523)"/>`, 26, 6)}`,
+    `<linearGradient id="csky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#060a20"/><stop offset="1" stop-color="#2a2150"/></linearGradient>
+     ${glowDef("moonGlow", "#f3eccd")}${glowDef("fireGlow", "#ff8a1e")}`),
+
+  church: (festive = false) => {
+    const glass = ["#e0455a", "#3f7be0", "#f2c14e", "#3fbf7f"];
+    let wedges = "";
+    for (let i = 0; i < 8; i++) {
+      const a1 = (i / 8) * Math.PI * 2, a2 = ((i + 1) / 8) * Math.PI * 2;
+      wedges += `<path class="glass" style="animation-delay:${i * 0.3}s" d="M500 215 L${500 + 50 * Math.cos(a1)} ${215 + 50 * Math.sin(a1)} A50 50 0 0 1 ${500 + 50 * Math.cos(a2)} ${215 + 50 * Math.sin(a2)}Z" fill="${glass[i % 4]}" stroke="#5b5170" stroke-width="3"/>`;
+    }
+    let lights = "";
+    if (festive) {
+      for (let i = 0; i < 26; i++) {
+        const x = 40 + i * 36, y = 90 + Math.sin(i * 0.6) * 18 + (i % 2) * 8;
+        lights += `<circle class="twinkle" cx="${x}" cy="${y}" r="5" fill="${glass[i % 4]}" style="animation-delay:${i * 0.15}s"/>`;
+      }
+      for (let i = 0; i < 12; i++) {
+        const x = rnd(60, 940), y = rnd(320, 470);
+        lights += `<circle cx="${x}" cy="${y}" r="26" fill="url(#lampGlow)"/><rect x="${x - 7}" y="${y - 10}" width="14" height="18" rx="3" fill="#ffd27a"/>`;
+      }
+    }
+    return svgWrap(`
+      <rect width="1000" height="600" fill="url(#chsky)"/>
+      ${stars(festive ? 30 : 60, 200)}
+      <rect x="290" y="150" width="90" height="330" fill="#262036"/>
+      <polygon points="290,150 335,40 380,150" fill="#1f1a2e"/>
+      <rect x="620" y="150" width="90" height="330" fill="#262036"/>
+      <polygon points="620,150 665,40 710,150" fill="#1f1a2e"/>
+      <rect x="370" y="170" width="260" height="310" fill="#2c253d"/>
+      <polygon points="365,172 500,92 635,172" fill="#241e33"/>
+      <path d="M318 260 V230 Q335 205 352 230 V260Z M648 260 V230 Q665 205 682 230 V260Z" fill="#f2b84e" opacity="0.75"/>
+      <path d="M318 360 V330 Q335 305 352 330 V360Z M648 360 V330 Q665 305 682 330 V360Z" fill="#f2b84e" opacity="0.6"/>
+      ${(art => festive ? art : hs("window", 500, 215, art, 58))(`<circle cx="500" cy="215" r="56" fill="#170d2a" stroke="#5b5170" stroke-width="5"/>${wedges}<circle cx="500" cy="215" r="10" fill="#ffd34d"/>`)}
+      <path d="M450 480 V400 Q500 335 550 400 V480Z" fill="#3b2416" stroke="#1f1208" stroke-width="5"/>
+      <rect y="480" width="1000" height="120" fill="#19152a"/>
+      <path d="M0 515 H1000 M0 555 H1000" stroke="#231e38" stroke-width="3"/>
+      <rect x="226" y="380" width="8" height="100" fill="#1a1626"/><circle cx="230" cy="372" r="40" fill="url(#lampGlow)"/><circle cx="230" cy="372" r="9" fill="#ffd27a"/>
+      <rect x="766" y="380" width="8" height="100" fill="#1a1626"/><circle cx="770" cy="372" r="40" fill="url(#lampGlow)"/><circle cx="770" cy="372" r="9" fill="#ffd27a"/>
+      ${festive ? `<rect x="420" y="300" width="160" height="34" rx="6" fill="#7a1f2b"/><text x="500" y="324" text-anchor="middle" font-size="20" font-weight="bold" fill="#ffd34d">빛의 축제</text>${lights}` : `
+      ${hs("basket", 300, 510, `
+        <path d="M265 500 H335 L325 535 H275Z" fill="#8a5a2b" stroke="#5a3a1a" stroke-width="3"/>
+        <path d="M270 500 Q300 465 330 500" stroke="#8a5a2b" stroke-width="5" fill="none"/>
+        <circle cx="285" cy="497" r="10" fill="#e3b26a"/><circle cx="305" cy="494" r="10" fill="#d9a35a"/><circle cx="320" cy="499" r="9" fill="#e3b26a"/>`)}
+      ${hs("scroll", 585, 430, `
+        <rect x="568" y="408" width="34" height="46" fill="#efe2bf"/>
+        <rect x="564" y="404" width="42" height="7" rx="3" fill="#cdb98a"/>
+        <path d="M574 422 H596 M574 432 H596 M574 442 H590" stroke="#7a6a4a" stroke-width="2"/>`, 34)}
+      ${hs("diary2", 140, 500, `
+        <rect x="112" y="470" width="56" height="62" rx="8" fill="#5a3a20"/>
+        <path d="M112 486 H168 M112 516 H168" stroke="#2f1d0e" stroke-width="4"/>
+        <rect x="160" y="490" width="12" height="9" fill="#e8dcb5" transform="rotate(15 166 494)"/>`, 30, 6)}`}`,
+      `<linearGradient id="chsky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${festive ? "#2a1840" : "#100a24"}"/><stop offset="1" stop-color="${festive ? "#6a3440" : "#2e1c3e"}"/></linearGradient>
+       ${glowDef("lampGlow", "#ffcf5a")}`);
+  },
+
+  wittenberg: () => {
+    let studs = "";
+    for (let y = 250; y <= 490; y += 40)
+      for (const x of [395, 470, 530, 605]) studs += `<circle cx="${x}" cy="${y}" r="4" fill="#1b1b1b"/>`;
+    return svgWrap(`
+      <rect width="1000" height="600" fill="url(#bricks)"/>
+      <rect width="1000" height="600" fill="url(#wshade)"/>
+      <path d="M360 525 V230 Q500 100 640 230 V525Z" fill="#2a180a"/>
+      <path d="M372 520 V234 Q500 116 628 234 V520Z" fill="#4a2c17"/>
+      <path d="M500 140 V520 M436 160 V520 M564 160 V520" stroke="#3a2210" stroke-width="4"/>
+      ${studs}
+      <circle cx="480" cy="410" r="12" fill="none" stroke="#222" stroke-width="5"/>
+      <circle cx="520" cy="410" r="12" fill="none" stroke="#222" stroke-width="5"/>
+      <g id="theses" style="opacity:0;transform:translateY(40px) rotate(-14deg)">
+        <rect x="455" y="250" width="90" height="118" fill="#f1e6c8"/>
+        <text x="500" y="270" text-anchor="middle" font-size="11" fill="#5a3a12" font-weight="bold">95개 조항</text>
+        <path d="M466 284 H534 M466 296 H534 M466 308 H530 M466 320 H534 M466 332 H526 M466 344 H534 M466 356 H520" stroke="#8a7550" stroke-width="2"/>
+        <circle cx="500" cy="256" r="3" fill="#333"/>
+      </g>
+      <path d="M290 290 H312 V270" stroke="#222" stroke-width="6" fill="none"/>
+      ${fireAt(304, 268, 0.8)}
+      <path d="M710 290 H688 V270" stroke="#222" stroke-width="6" fill="none"/>
+      ${fireAt(696, 268, 0.8)}
+      <rect y="525" width="1000" height="75" fill="#1f1f2a"/>
+      ${hs("calendar", 170, 250, `
+        <rect x="140" y="215" width="62" height="74" fill="#e9ddba" stroke="#6a5530" stroke-width="3"/>
+        <rect x="140" y="215" width="62" height="16" fill="#9a2a2a"/>
+        <text x="171" y="256" text-anchor="middle" font-size="15" font-weight="bold" fill="#3a2a10">1517</text>
+        <text x="171" y="277" text-anchor="middle" font-size="13" fill="#3a2a10">10.31</text>`, 42)}
+      ${hs("indulgence", 240, 535, `
+        <rect x="212" y="522" width="56" height="34" fill="#e7d9b0" transform="rotate(-8 240 539)"/>
+        <circle cx="256" cy="548" r="7" fill="#b02a2a"/>`, 36)}
+      ${hs("bible", 800, 470, `
+        <rect x="740" y="488" width="120" height="14" fill="#5a3a20"/>
+        <rect x="748" y="502" width="10" height="24" fill="#5a3a20"/><rect x="842" y="502" width="10" height="24" fill="#5a3a20"/>
+        <rect x="776" y="462" width="50" height="26" rx="3" fill="#6b1f24" stroke="#3a0f12" stroke-width="2"/>
+        <path d="M801 466 V484 M794 472 H808" stroke="#e8c45a" stroke-width="3"/>`, 40)}
+      ${hs("diary3", 655, 540, `<rect x="646" y="533" width="18" height="11" fill="#e8dcb5" transform="rotate(-10 655 538)"/>`, 24, 6)}`,
+      `<pattern id="bricks" width="80" height="40" patternUnits="userSpaceOnUse">
+         <rect width="80" height="40" fill="#3b3b48"/>
+         <path d="M0 0 H80 M0 20 H80 M40 0 V20 M0 20 V40 M80 20 V40" stroke="#2a2a35" stroke-width="3"/>
+       </pattern>
+       <radialGradient id="wshade" cx="0.5" cy="0.45" r="0.7"><stop offset="0.3" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.7"/></radialGradient>
+       ${glowDef("fireGlow", "#ff8a1e")}`);
+  },
+
+  ship: () => {
+    const wavePath = (y, amp) => {
+      let d = `M0 ${y}`;
+      for (let x = 0; x <= 2000; x += 125) d += ` Q${x + 62} ${y - amp} ${x + 125} ${y}`;
+      return d + ` V600 H0Z`;
+    };
+    return svgWrap(`
+      <rect width="1000" height="600" fill="url(#ssky)"/>
+      ${stars(110, 360)}
+      <circle cx="780" cy="110" r="120" fill="url(#moonGlow)"/>
+      <circle cx="780" cy="110" r="38" fill="#f3eccd"/>
+      <rect y="380" width="1000" height="220" fill="#0a1430"/>
+      <path d="M760 400 H800 M748 425 H812 M765 450 H795" stroke="#f3eccd" stroke-width="3" opacity="0.35"/>
+      <path class="wave" d="${wavePath(395, 10)}" fill="#0d1b3e"/>
+      <g class="bob">
+        <path d="M200 382 L800 382 L735 455 L270 455Z" fill="#2a1a10"/>
+        <path d="M205 382 H795" stroke="#4a2f1a" stroke-width="6"/>
+        <rect x="495" y="110" width="10" height="272" fill="#3a2414"/>
+        <path d="M505 130 Q650 200 505 340Z" fill="#d8cfb0" opacity="0.88"/>
+        <path d="M495 150 Q370 220 495 330Z" fill="#cfc5a5" opacity="0.8"/>
+        <path d="M500 110 L230 382 M500 110 L770 382" stroke="#1a1008" stroke-width="2"/>
+        <path d="M505 112 L545 120 L505 128Z" fill="#2f8a4a"/>
+        ${hs("turnip", 400, 360, `
+          <path d="M385 370 Q380 342 400 338 Q420 342 415 370 Q400 382 385 370Z" fill="#e8e0f0"/>
+          <path d="M385 350 Q400 344 415 350" stroke="#9b59b6" stroke-width="5" fill="none"/>
+          <path d="M392 356 L396 352 L398 358Z M404 356 L408 352 L410 358Z M393 366 Q400 370 407 366" fill="#ffb84d" stroke="#ffb84d"/>
+          <circle cx="400" cy="358" r="22" fill="url(#lampGlow)"/>`, 34)}
+        ${hs("pumpkins", 600, 360, `
+          <rect x="565" y="350" width="70" height="32" fill="#6b4425" stroke="#3a2414" stroke-width="3"/>
+          <circle cx="582" cy="347" r="13" fill="#e67e22"/><circle cx="604" cy="343" r="15" fill="#d35400"/><circle cx="624" cy="348" r="12" fill="#e67e22"/>`, 38)}
+      </g>
+      ${hs("newspaper", 300, 290, `<g class="float"><rect x="276" y="270" width="48" height="38" fill="#ddd6c4"/><path d="M282 280 H318 M282 288 H318 M282 296 H310" stroke="#555" stroke-width="2"/><text x="300" y="278" text-anchor="middle" font-size="7" fill="#222">1930</text></g>`, 36)}
+      <path class="wave w2" d="${wavePath(445, 14)}" fill="#10224d" opacity="0.92"/>
+      ${hs("diary4", 860, 480, `<g class="float"><rect x="848" y="470" width="26" height="12" rx="5" fill="#5fa88a" opacity="0.8" transform="rotate(-20 861 476)"/><rect x="852" y="472" width="10" height="6" fill="#e8dcb5" transform="rotate(-20 857 475)"/></g>`, 26, 6)}
+      <path class="wave w3" d="${wavePath(505, 16)}" fill="#13295a" opacity="0.95"/>`,
+      `<linearGradient id="ssky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#040818"/><stop offset="1" stop-color="#18264f"/></linearGradient>
+       ${glowDef("moonGlow", "#f3eccd")}${glowDef("lampGlow", "#ffb84d")}`);
+  },
+
+  modern: () => {
+    let city = "";
+    const blds = [[0, 160, 90], [90, 210, 70], [460, 120, 80], [620, 190, 110], [730, 140, 90], [820, 230, 70], [890, 170, 110]];
+    for (const [x, h, w] of blds) {
+      city += `<rect x="${x}" y="${470 - h - 60}" width="${w}" height="${h + 60}" fill="#121426"/>`;
+      for (let wy = 470 - h - 45; wy < 440; wy += 28)
+        for (let wx = x + 12; wx < x + w - 14; wx += 22)
+          if (Math.random() < 0.4) city += `<rect x="${wx}" y="${wy}" width="10" height="14" fill="#ffd27a" opacity="${rnd(0.4, 0.9)}"/>`;
+    }
+    return svgWrap(`
+      <rect width="1000" height="600" fill="url(#msky)"/>
+      ${stars(25, 150)}
+      ${city}
+      <rect x="170" y="250" width="270" height="220" fill="#2a2032"/>
+      <rect x="160" y="236" width="290" height="22" fill="#3a2a40"/>
+      <path d="M170 262 Q215 280 260 262 Q305 280 350 262 Q395 280 440 262" stroke="#555" stroke-width="2" fill="none"/>
+      ${[185, 215, 245, 275, 305, 335, 365, 395, 425].map((x, i) => `<circle class="twinkle" cx="${x}" cy="${268 + (i % 2) * 6}" r="4" fill="#ff9a3c" style="animation-delay:${i * 0.2}s"/>`).join("")}
+      ${hs("shopwin", 300, 360, `
+        <rect x="195" y="295" width="210" height="130" fill="#ff8a2a" opacity="0.32"/>
+        <rect x="195" y="295" width="210" height="130" fill="none" stroke="#4a3a50" stroke-width="5"/>
+        <circle cx="270" cy="335" r="17" fill="#f2f2f2"/><circle cx="264" cy="333" r="4" fill="#222"/><circle cx="276" cy="333" r="4" fill="#222"/>
+        <path d="M270 352 V395 M256 362 H284 M258 372 H282 M260 382 H280" stroke="#f2f2f2" stroke-width="3"/>
+        <ellipse cx="340" cy="345" rx="16" ry="20" fill="#d8d8d8"/><path d="M332 338 h5 M343 338 h5" stroke="#a00" stroke-width="3"/><path d="M330 356 Q340 362 350 356" stroke="#a00" stroke-width="2" fill="none"/>
+        <path d="M225 305 l8 8 l8 -8 l-4 10 h-8z" fill="#111"/><path d="M370 305 l8 8 l8 -8 l-4 10 h-8z" fill="#111"/>`, 70)}
+      <circle cx="205" cy="458" r="13" fill="#e67e22"/><circle cx="230" cy="462" r="10" fill="#d35400"/>
+      <rect x="470" y="210" width="140" height="260" fill="#1a1828"/>
+      ${hs("poster", 540, 290, `
+        <rect x="508" y="250" width="64" height="84" fill="#3a1030" stroke="#7a2050" stroke-width="2"/>
+        <path d="M540 266 L548 290 L524 276 H556 L532 290Z" fill="none" stroke="#c03070" stroke-width="2"/>
+        <path d="M518 306 H562 M518 316 H556 M518 324 H560" stroke="#c88" stroke-width="2"/>`, 46)}
+      <rect y="470" width="1000" height="130" fill="#17171f"/>
+      <path d="M0 478 H1000" stroke="#2a2a36" stroke-width="5"/>
+      <path d="M100 540 H180 M300 540 H380 M500 540 H580 M700 540 H780 M900 540 H980" stroke="#3a3a46" stroke-width="5"/>
+      ${hs("ouija", 700, 450, `
+        <rect x="650" y="462" width="110" height="10" fill="#4a3424"/>
+        <rect x="660" y="472" width="8" height="18" fill="#4a3424"/><rect x="742" y="472" width="8" height="18" fill="#4a3424"/>
+        <rect x="675" y="436" width="56" height="26" fill="#3b2a1a" stroke="#8a6a3a" stroke-width="2"/>
+        <text x="703" y="453" text-anchor="middle" font-size="9" fill="#d9b86a">YES · NO</text>`, 40)}
+      <rect x="866" y="250" width="8" height="225" fill="#2a2a34"/>
+      <path d="M852 250 H888 L880 238 H860Z" fill="#3a3a44"/>
+      <polygon points="858,252 882,252 940,475 800,475" fill="#ffe2a0" opacity="0.1"/>
+      ${hs("diary5", 880, 500, `<rect x="872" y="494" width="16" height="10" fill="#e8dcb5" transform="rotate(8 880 499)"/>`, 24, 6)}`,
+      `<linearGradient id="msky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#090c22"/><stop offset="1" stop-color="#3c2040"/></linearGradient>`);
+  }
+};
+
+/* ───────────── 인물 그림 ───────────── */
+// back 은 얼굴 뒤(후드·뒷머리), hair 는 얼굴 위(앞머리)
+function face({ skin = "#f1c9a5", cloth = "#e07b2a", back = "", hair = "", top = "", bg = "#1c1f3a" }) {
+  return `<svg viewBox="0 0 120 120">
+    <circle cx="60" cy="60" r="58" fill="${bg}"/>
+    <path d="M16 120 Q18 88 60 86 Q102 88 104 120Z" fill="${cloth}"/>
+    <rect x="53" y="78" width="14" height="12" fill="${skin}"/>
+    ${back}
+    <ellipse cx="60" cy="58" rx="23" ry="26" fill="${skin}"/>
+    ${hair}
+    <circle cx="51" cy="60" r="2.8" fill="#222"/><circle cx="69" cy="60" r="2.8" fill="#222"/>
+    <circle cx="46" cy="68" r="4" fill="#ff8a8a" opacity="0.3"/><circle cx="74" cy="68" r="4" fill="#ff8a8a" opacity="0.3"/>
+    <path d="M53 71 Q60 76 67 71" stroke="#7a3b2a" stroke-width="2" fill="none"/>
+    ${top}
+  </svg>`;
+}
+const S = {
+  light: 0, points: 0, verses: [], diary: new Set(), friend: 0,
+  harangPaint: true, phase: "idle", pointer: { x: innerWidth / 2, y: innerHeight * 0.4 }
+};
+const PEOPLE = {
+  narr: { name: "", art: () => "" },
+  harang: { name: "하랑", art: () => face({
+    cloth: "#e0782a",
+    hair: `<path d="M36 58 Q34 30 60 30 Q88 30 84 58 Q80 42 60 41 Q42 42 36 58Z" fill="#2b1d14"/>`,
+    top: `<path d="M37 50 Q50 34 74 40 Q62 38 50 44Z" fill="#2b1d14"/>` + (S.harangPaint
+      ? `<circle cx="51" cy="60" r="7" fill="none" stroke="#fff" stroke-width="3"/><circle cx="69" cy="60" r="7" fill="none" stroke="#fff" stroke-width="3"/><path d="M57 66 L60 62 L63 66Z" fill="#222"/>`
+      : "")
+  }) },
+  eppa: { name: "에파 (켈트 마을 아이)", art: () => face({
+    skin: "#f4d3b8", cloth: "#2f6b45",
+    back: `<path d="M35 58 Q34 28 60 30 Q86 28 85 58" fill="#b8501f"/><path d="M38 58 Q30 82 38 100 M82 58 Q90 82 82 100" stroke="#b8501f" stroke-width="9" fill="none"/>`,
+    top: `<path d="M36 50 Q60 30 84 50 Q60 40 36 50Z" fill="#b8501f"/><path d="M44 70 L50 74 M70 70 L76 74" stroke="#666" stroke-width="2"/>`
+  }) },
+  monk: { name: "베네딕트 수사", art: () => face({
+    skin: "#e9c09a", cloth: "#5b3b22",
+    back: `<path d="M28 70 Q26 26 60 24 Q94 26 92 70 Q90 96 60 96 Q30 96 28 70Z" fill="#6b4a2c"/>`,
+    top: `<path d="M38 46 Q60 38 82 46" stroke="#8a6a4a" stroke-width="5" fill="none"/>`
+  }) },
+  luther: { name: "마르틴 루터", art: () => face({
+    skin: "#ebc39c", cloth: "#1a1a22",
+    back: `<path d="M36 64 Q34 40 60 38 Q86 40 84 64" fill="#4a3220"/>`,
+    top: `<path d="M32 46 Q60 18 88 46 Q60 38 32 46Z" fill="#111"/><path d="M48 54 H56 M64 54 H72" stroke="#3a2a1a" stroke-width="3"/>`
+  }) },
+  child: { name: "중세 마을 아이", art: () => face({
+    skin: "#f2cfae", cloth: "#7a5a9a",
+    hair: `<path d="M37 56 Q36 32 60 32 Q84 32 83 56 Q76 44 60 44 Q44 44 37 56Z" fill="#c9a24a"/>`
+  }) },
+  sean: { name: "숀 (아일랜드 이민 소년)", art: () => face({
+    skin: "#f6d6bd", cloth: "#6a4a2a",
+    back: `<path d="M37 58 Q36 36 60 36 Q84 36 83 58" fill="#a8521f"/>`,
+    top: `<ellipse cx="60" cy="38" rx="27" ry="10" fill="#3a3a44"/><path d="M58 40 Q86 38 94 46 Q80 46 62 46Z" fill="#2a2a32"/>
+      <circle cx="50" cy="67" r="1.2" fill="#b0603a"/><circle cx="54" cy="69" r="1.2" fill="#b0603a"/><circle cx="66" cy="69" r="1.2" fill="#b0603a"/><circle cx="70" cy="67" r="1.2" fill="#b0603a"/>`
+  }) },
+  party: { name: "파티 친구", art: () => face({
+    cloth: "#5a2a7a",
+    back: `<path d="M36 58 Q34 30 60 30 Q86 30 84 58" fill="#1a1a1a"/>`,
+    top: `<path d="M34 40 L60 2 L86 40Z" fill="#2a1a3a"/><ellipse cx="60" cy="40" rx="34" ry="6" fill="#2a1a3a"/>`
+  }) },
+  grandma: { name: "할머니", art: () => face({
+    skin: "#efc8a6", cloth: "#a0524a",
+    hair: `<path d="M35 60 Q33 30 60 30 Q87 30 85 60 Q80 42 60 42 Q40 42 35 60Z" fill="#cfcfd6"/><circle cx="60" cy="26" r="11" fill="#cfcfd6"/>`,
+    top: `<circle cx="51" cy="60" r="7" fill="none" stroke="#6a5a4a" stroke-width="2"/><circle cx="69" cy="60" r="7" fill="none" stroke="#6a5a4a" stroke-width="2"/><path d="M58 60 H62" stroke="#6a5a4a" stroke-width="2"/>`
+  }) },
+  shadow: { name: "의심의 그림자", art: () => shadowArt() }
+};
+function shadowArt() {
+  return `<svg viewBox="0 0 120 120">
+    <path d="M60 8 Q96 14 100 56 Q104 92 112 112 Q92 100 84 112 Q74 98 60 112 Q46 98 36 112 Q28 100 8 112 Q16 92 20 56 Q24 14 60 8Z" fill="#140a24"/>
+    <path d="M60 8 Q96 14 100 56" stroke="#5a2a9a" stroke-width="3" fill="none" opacity="0.6"/>
+    <ellipse cx="46" cy="52" rx="9" ry="6" fill="#c9a6ff"/><ellipse cx="74" cy="52" rx="9" ry="6" fill="#c9a6ff"/>
+    <circle cx="46" cy="52" r="3" fill="#fff"/><circle cx="74" cy="52" r="3" fill="#fff"/>
+    <path d="M44 74 Q60 66 76 74" stroke="#c9a6ff" stroke-width="3" fill="none"/>
+  </svg>`;
+}
+
+/* ───────────── 말씀 카드 ───────────── */
+const VERSES = {
+  deut: { ref: "신명기 18:10-11", text: "점쟁이나 길흉을 말하는 자나 요술하는 자나 무당이나 진언자나 신접자나 박수나 초혼자를 너희 가운데에 용납하지 말라" },
+  eph2: { ref: "에베소서 2:8", text: "너희는 그 은혜에 의하여 믿음으로 말미암아 구원을 받았으니 이것은 너희에게서 난 것이 아니요 하나님의 선물이라" },
+  rom1: { ref: "로마서 1:17", text: "오직 의인은 믿음으로 말미암아 살리라" },
+  john8: { ref: "요한복음 8:12", text: "나는 세상의 빛이니 나를 따르는 자는 어둠에 다니지 아니하고 생명의 빛을 얻으리라" },
+  rom12: { ref: "로마서 12:21", text: "악에게 지지 말고 선으로 악을 이기라" },
+  eph5: { ref: "에베소서 5:11", text: "너희는 열매 없는 어둠의 일에 참여하지 말고 도리어 책망하라" },
+  john4: { ref: "요한일서 4:4", text: "자녀들아 너희는 하나님께 속하였고 또 그들을 이기었나니 이는 너희 안에 계신 이가 세상에 있는 자보다 크심이라" }
+};
+
+/* ───────────── 탐색 단서 ───────────── */
+const CLUES = {
+  attic: {
+    lantern: ["narr", "먼지 쌓인 낡은 등불이에요. 바닥에 글씨가 새겨져 있어요.\n\"빛을 따라가는 자에게 길이 열리리라.\""]
+  },
+  celtic: {
+    hearth: ["narr", "불 꺼진 화덕이에요. 이 밤엔 집집마다 불을 끄고, 언덕 위 큰 모닥불에서 새 불을 받아 갔다고 해요."],
+    mask: ["eppa", "그건 재와 가죽으로 만든 가면이야. 떠도는 영들이 우리를 못 알아보게 얼굴을 가리는 거지."],
+    bowl: ["narr", "문 앞에 놓인 음식 그릇이에요. 떠도는 영을 달래려고 음식을 내놓던 풍습이에요.\n오늘날 집집마다 사탕을 받으러 다니는 모습과 닮았어요."],
+    diary1: ["diary", "📜 일기 조각 1\n\"나도 처음엔 할로윈이 그냥 재미있는 날인 줄만 알았단다. 뿌리를 보기 전까지는.\""]
+  },
+  church: {
+    window: ["monk", "스테인드글라스에는 믿음을 지킨 사람들이 그려져 있지요. 모든 성인의 날은 그들을 기억하는 교회의 절기랍니다."],
+    basket: ["narr", "'영혼 케이크'가 담긴 바구니예요. 아이들은 이 빵을 받는 대가로 죽은 사람을 위해 기도해 주었어요."],
+    scroll: ["narr", "양피지에 \"All Hallows' Eve\"라고 적혀 있어요.\n'모든 성인의 날 전날 밤'이라는 뜻이에요. 이 말이 줄어서 '할로윈'이 되었어요."],
+    diary2: ["diary", "📜 일기 조각 2\n\"이름이 교회에서 왔다고 뜻까지 같은 건 아니더라. 그 밤의 풍습은 훨씬 오래된 어둠에서 왔거든.\""]
+  },
+  wittenberg: {
+    indulgence: ["narr", "면벌부예요. 돈을 내면 죄의 벌을 줄여 준다며 팔던 종이예요. 루터는 이것이 성경의 가르침과 다르다고 외쳤어요."],
+    bible: ["luther", "라틴어 성경이오. 언젠가 이 말씀을 독일어로 옮겨, 농부도 아이도 직접 읽게 하고 싶소."],
+    calendar: ["narr", "달력에 '1517년 10월 31일, 모든 성인의 날 전날'이라고 적혀 있어요.\n어둠을 기념하던 밤에 말씀의 빛이 켜진 날이에요."],
+    diary3: ["diary", "📜 일기 조각 3\n\"같은 10월 31일에도 누군가는 어둠을 기념하고, 누군가는 말씀을 붙잡았지. 너는 어느 쪽에 서고 싶니?\""]
+  },
+  ship: {
+    turnip: ["sean", "내가 판 순무 등불이야! 이게 원래 '잭오랜턴'이야. 갈 곳 없이 떠도는 잭의 등불이지."],
+    pumpkins: ["narr", "호박이 가득한 상자예요. 미국으로 건너간 사람들은 순무 대신 더 크고 파기 쉬운 호박으로 등불을 만들었어요."],
+    newspaper: ["narr", "바람에 날아온 미래의 신문이에요.\n\"1930년대: 할로윈 밤 장난으로 유리창 깨지고 물건 부서져\"\n마을들은 장난을 줄이려고 아이들에게 사탕을 나눠 주는 행사를 만들었고, 이것이 오늘날의 사탕 받기가 되었어요."],
+    diary4: ["diary", "📜 일기 조각 4\n\"잭은 등불을 들고 영원히 떠돌았지만, 우리에겐 따라갈 진짜 빛이 있단다.\""]
+  },
+  modern: {
+    shopwin: ["narr", "해골, 피 묻은 가면, 박쥐 장식… 죽음과 공포를 귀여운 장난감처럼 팔고 있어요."],
+    ouija: ["narr", "'위저 보드'라는 판이에요. 장난감처럼 팔리지만, 원래 죽은 자의 영을 불러 대화하려고 만든 도구예요."],
+    poster: ["narr", "포스터에 적힌 글: 오늘날 사탄교회와 위카(현대 마녀 종교) 같은 단체는 이 날을 자기들의 중요한 기념일로 지켜요. 실제로 그래요."],
+    diary5: ["diary", "📜 일기 조각 5\n\"등불은 혼자 들고 있으라고 주신 게 아니란다. 다음 사람에게 건네주렴.\""]
+  }
+};
+
+/* ───────────── 화면 도구 ───────────── */
+const $ = id => document.getElementById(id);
+const stage = $("stage"), bgEl = $("bg"), dialog = $("dialog");
+const wait = ms => new Promise(r => setTimeout(r, ms));
+// 시대별 탐색 5 + 망치 1 + 문제·선택 11 + 그림자 1 = 등불 100%
+const TOTAL_POINTS = 5 + 1 + 11 + 1;
+const AMBIENT = { attic: "wind", celtic: "fire", church: "drone", wittenberg: "fire", ship: "waves", modern: "city", festival: "drone" };
+const PARTICLES = { attic: "dust", celtic: "ember", church: "dust", wittenberg: "ember", ship: "spray", modern: "leaf", festival: "glow" };
+let particleKind = "dust";
+
+function setLight(v) {
+  S.light = Math.max(0, Math.min(100, v));
+  $("lightBar").style.width = S.light + "%";
+  $("lightNum").textContent = Math.round(S.light);
+  $("lanternIcon").style.filter = `drop-shadow(0 0 ${4 + S.light / 4}px var(--gold)) brightness(${0.6 + S.light / 200})`;
+}
+function addPoint() {
+  S.points++;
+  setLight((S.points / TOTAL_POINTS) * 100);
+}
+function updateHud() {
+  $("cardBtn").textContent = `📖 ${S.verses.length}`;
+  $("diaryBtn").textContent = `📜 ${S.diary.size}/5`;
+}
+function toast(msg) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 1900);
+}
+function gainVerse(key) {
+  if (!key || S.verses.includes(key)) return;
+  S.verses.push(key);
+  updateHud();
+  toast(`📖 말씀 카드 획득 · ${VERSES[key].ref}`);
+}
+function flash() {
+  $("flash").classList.add("on");
+  sound.whoosh();
+  setTimeout(() => $("flash").classList.remove("on"), 250);
+}
+function shakeStage() {
+  stage.classList.remove("shake");
+  void stage.offsetWidth;
+  stage.classList.add("shake");
+}
+async function setScene(key) {
+  bgEl.classList.add("fade");
+  await wait(700);
+  bgEl.innerHTML = key === "festival" ? SCENES.church(true) : SCENES[key]();
+  particleKind = PARTICLES[key];
+  sound.ambient(AMBIENT[key]);
+  if (key === "church" || key === "festival") sound.bell();
+  bgEl.classList.remove("fade");
+  await wait(500);
+}
+async function titleCard(tag, title) {
+  S.phase = "title";
+  dialog.classList.remove("show");
+  $("titleTag").textContent = tag;
+  $("titleText").textContent = title;
+  $("titleCard").classList.add("show");
+  await wait(2300);
+  $("titleCard").classList.remove("show");
+  await wait(700);
+}
+
+/* ───────────── 대화 ───────────── */
+let advanceFn = null, typing = false, skipType = false;
+
+function showSpeaker(who) {
+  const p = PEOPLE[who === "diary" ? "narr" : who];
+  dialog.className = "show" + (who === "narr" ? " narr" : "") + (who === "diary" ? " diary" : "");
+  $("portrait").innerHTML = p.art();
+  $("who").textContent = who === "diary" ? "할머니의 일기" : p.name;
+  $("choices").innerHTML = "";
+  if (S.phase !== "battle") S.phase = "dialog";
+}
+function typeText(text) {
+  return new Promise(res => {
+    const el = $("text");
+    let i = 0;
+    typing = true;
+    skipType = false;
+    const tick = () => {
+      if (skipType) i = text.length;
+      el.textContent = text.slice(0, i);
+      if (i >= text.length) { typing = false; res(); return; }
+      if (i % 3 === 0) sound.blip();
+      i++;
+      setTimeout(tick, 26);
+    };
+    tick();
+  });
+}
+function waitAdvance() {
+  dialog.classList.add("ready");
+  return new Promise(r => { advanceFn = r; });
+}
+function advance() {
+  if (typing) { skipType = true; return; }
+  if (advanceFn) {
+    const f = advanceFn;
+    advanceFn = null;
+    dialog.classList.remove("ready");
+    f();
+  }
+}
+dialog.addEventListener("click", advance);
+addEventListener("keydown", e => {
+  if (e.key === " " || e.key === "Enter") { e.preventDefault(); advance(); }
+});
+
+async function say(who, text) {
+  showSpeaker(who);
+  await typeText(text);
+  await waitAdvance();
+}
+// 보기를 누르면 그 번호를 돌려줌
+async function ask(who, q, options) {
+  showSpeaker(who);
+  await typeText(q);
+  return new Promise(res => {
+    const box = $("choices");
+    box.innerHTML = "";
+    options.forEach((o, i) => {
+      const b = document.createElement("button");
+      b.innerHTML = o;
+      b.onclick = e => {
+        e.stopPropagation();
+        box.querySelectorAll("button").forEach(x => (x.disabled = true));
+        res(i);
+      };
+      box.appendChild(b);
+    });
+  });
+}
+function mark(goodIndex, picked) {
+  $("choices").querySelectorAll("button").forEach((b, j) => {
+    if (j === goodIndex) b.classList.add("right");
+    else if (j === picked) b.classList.add("wrong");
+  });
+}
+async function quiz(who, q, options, answer, explain, verse) {
+  const i = await ask(who, q, options);
+  mark(answer, i);
+  const ok = i === answer;
+  if (ok) { sound.good(); addPoint(); } else { sound.bad(); shakeStage(); }
+  await wait(900);
+  await say("narr", (ok ? "✨ 등불이 밝아졌어요!\n" : "등불이 깜빡입니다… 정답은 초록색이에요.\n") + explain);
+  if (verse) {
+    gainVerse(verse);
+    await say("narr", `📖 ${VERSES[verse].text}\n(${VERSES[verse].ref})`);
+  }
+  return ok;
+}
+// good 이 붙은 보기를 고르면 true
+async function choice(who, q, options) {
+  const i = await ask(who, q, options.map(o => o.text));
+  const goodIndex = options.findIndex(o => o.good);
+  mark(goodIndex, i);
+  const ok = i === goodIndex;
+  if (ok) { sound.good(); addPoint(); } else { sound.bad(); shakeStage(); }
+  await wait(800);
+  return ok;
+}
+
+/* ───────────── 등불로 어둠 비추기 ───────────── */
+const darkCv = $("dark"), dctx = darkCv.getContext("2d");
+const fxCv = $("fx"), fctx = fxCv.getContext("2d");
+let W = 0, H = 0, DPR = 1, darkAlpha = 0.6;
+
+function resize() {
+  DPR = Math.min(2, devicePixelRatio || 1);
+  W = innerWidth; H = innerHeight;
+  for (const c of [darkCv, fxCv]) { c.width = W * DPR; c.height = H * DPR; }
+  dctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  fctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+addEventListener("resize", resize);
+resize();
+
+function setPointer(e) { S.pointer.x = e.clientX; S.pointer.y = e.clientY; }
+stage.addEventListener("pointermove", setPointer);
+stage.addEventListener("pointerdown", setPointer);
+
+function lightRadius() {
+  return Math.min(W, H) * 0.14 * (1 + S.light / 110);
+}
+function drawDark(t) {
+  const target = { explore: 0.96, title: 0.85, battle: 0.7, idle: 0.55 }[S.phase] ?? Math.max(0.12, 0.6 - S.light * 0.004);
+  darkAlpha += (target - darkAlpha) * 0.06;
+  dctx.globalCompositeOperation = "source-over";
+  dctx.clearRect(0, 0, W, H);
+  dctx.fillStyle = `rgba(3, 3, 10, ${darkAlpha})`;
+  dctx.fillRect(0, 0, W, H);
+  const r = (S.phase === "explore" ? lightRadius() : Math.max(W, H) * 0.5) * (1 + Math.sin(t / 130) * 0.015);
+  const { x, y } = S.pointer;
+  dctx.globalCompositeOperation = "destination-out";
+  const g = dctx.createRadialGradient(x, y, r * 0.15, x, y, r);
+  g.addColorStop(0, "rgba(0,0,0,1)");
+  g.addColorStop(0.7, "rgba(0,0,0,0.85)");
+  g.addColorStop(1, "rgba(0,0,0,0)");
+  dctx.fillStyle = g;
+  dctx.beginPath();
+  dctx.arc(x, y, r, 0, Math.PI * 2);
+  dctx.fill();
+  if (S.phase === "explore") {
+    dctx.globalCompositeOperation = "source-over";
+    const warm = dctx.createRadialGradient(x, y, 0, x, y, r);
+    warm.addColorStop(0, "rgba(255, 190, 80, 0.16)");
+    warm.addColorStop(1, "rgba(255, 190, 80, 0)");
+    dctx.fillStyle = warm;
+    dctx.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+}
+
+/* 떠다니는 불씨 · 먼지 · 물보라 · 낙엽 */
+let parts = [];
+function spawn() {
+  const k = particleKind;
+  if (k === "ember") return { x: W * rnd(0.3, 0.7), y: H * rnd(0.45, 0.6), vx: rnd(-0.3, 0.3), vy: rnd(-1.4, -0.6), life: rnd(60, 140), r: rnd(1, 2.5), c: `255,${~~rnd(120, 200)},60` };
+  if (k === "spray") return { x: rnd(0, W), y: H * rnd(0.6, 0.9), vx: rnd(-1.5, -0.5), vy: rnd(-0.8, 0.2), life: rnd(40, 90), r: rnd(0.8, 1.8), c: "200,220,255" };
+  if (k === "leaf") return { x: rnd(0, W), y: -10, vx: rnd(-0.6, 0.6), vy: rnd(0.6, 1.3), life: H / 0.8, r: rnd(2.5, 4), c: `${~~rnd(200, 240)},${~~rnd(90, 140)},40` };
+  if (k === "glow") return { x: rnd(0, W), y: H * rnd(0.5, 1), vx: rnd(-0.2, 0.2), vy: rnd(-0.7, -0.3), life: rnd(120, 260), r: rnd(1.5, 3.5), c: "255,210,110" };
+  return { x: rnd(0, W), y: rnd(0, H), vx: rnd(-0.2, 0.2), vy: rnd(-0.15, 0.15), life: rnd(120, 300), r: rnd(0.6, 1.6), c: "230,220,200" };
+}
+function drawParticles() {
+  fctx.clearRect(0, 0, W, H);
+  if (parts.length < 70 && Math.random() < 0.5) parts.push({ ...spawn(), age: 0 });
+  parts = parts.filter(p => p.age < p.life);
+  for (const p of parts) {
+    p.age++; p.x += p.vx + Math.sin(p.age / 20) * 0.2; p.y += p.vy;
+    const a = Math.sin((p.age / p.life) * Math.PI);
+    fctx.fillStyle = `rgba(${p.c},${a * 0.8})`;
+    fctx.beginPath();
+    fctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    fctx.fill();
+  }
+}
+function loop(t) {
+  drawDark(t);
+  drawParticles();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+function isLit(el) {
+  const b = el.querySelector(".hit").getBoundingClientRect();
+  const cx = b.left + b.width / 2, cy = b.top + b.height / 2;
+  return Math.hypot(cx - S.pointer.x, cy - S.pointer.y) < lightRadius() * 0.8 + b.width / 2;
+}
+// 단서를 모두 찾으면 끝. 일기 조각은 찾지 않아도 넘어갈 수 있음
+function explore(sceneKey, hintText, scored = true) {
+  return new Promise(resolve => {
+    const spots = [...bgEl.querySelectorAll(".hs")];
+    const need = spots.filter(s => !s.dataset.id.startsWith("diary")).length;
+    let found = 0, busy = false;
+    const showHint = () => {
+      S.phase = "explore";
+      stage.classList.add("explore");
+      dialog.classList.remove("show");
+      $("hint").style.display = "block";
+      $("hint").innerHTML = `🏮 ${hintText}<br><b>단서 ${found} / ${need}</b>`;
+    };
+    showHint();
+    spots.forEach(el => {
+      el.addEventListener("click", async () => {
+        if (busy || S.phase !== "explore" || el.classList.contains("got") || !isLit(el)) return;
+        busy = true;
+        el.classList.add("got");
+        sound.find();
+        stage.classList.remove("explore");
+        $("hint").style.display = "none";
+        const id = el.dataset.id;
+        const [who, text] = CLUES[sceneKey][id];
+        if (id.startsWith("diary")) {
+          S.diary.add(id);
+          updateHud();
+          toast("📜 할머니의 일기 조각을 찾았어요!");
+        }
+        await say(who, text);
+        if (!id.startsWith("diary")) found++;
+        busy = false;
+        if (found >= need) {
+          if (scored) addPoint();
+          resolve();
+        } else showHint();
+      });
+    });
+  });
+}
+
+/* ───────────── 망치 미니게임 ───────────── */
+function hammerGame() {
+  return new Promise(resolve => {
+    S.phase = "dialog";
+    dialog.classList.remove("show");
+    const box = $("hammerBox"), btn = $("hammerBtn"), paper = $("theses");
+    let hits = 0;
+    const need = 10;
+    box.style.display = "block";
+    $("hammerCount").textContent = "0 / 95 · 망치를 두드리세요!";
+    btn.onclick = () => {
+      if (hits >= need) return;
+      hits++;
+      sound.hammer();
+      shakeStage();
+      const p = hits / need;
+      paper.style.opacity = 0.3 + p * 0.7;
+      paper.style.transform = `translateY(${(1 - p) * 40}px) rotate(${(1 - p) * -14}deg)`;
+      $("hammerCount").textContent = `${Math.round(95 * p)} / 95`;
+      if (hits === need) {
+        sound.bell();
+        addPoint();
+        setTimeout(() => { box.style.display = "none"; resolve(); }, 700);
+      }
+    };
+  });
+}
+
+/* ───────────── 그림자와 말씀 대결 ───────────── */
+const DOUBTS = [
+  ["그냥 재미로 점 좀 치는 게 뭐 어때? 다들 심심풀이로 하잖아.", "deut"],
+  ["친구들 다 하는데 너만 빠지면 이상한 애 되는 거야. 그냥 같이 해.", "eph5"],
+  ["어둠이 무섭지? 너 같은 꼬마는 날 못 이겨.", "john4"],
+  ["네가 사탕 좀 나눠 준다고 뭐가 바뀌어? 아무것도 안 바뀌어.", "rom12"],
+  ["넌 길을 잃었어. 잭처럼 영원히 떠돌게 될걸?", "john8"]
+];
+const shuffle = a => a.map(v => [Math.random(), v]).sort((x, y) => x[0] - y[0]).map(v => v[1]);
+
+async function battle() {
+  S.phase = "battle";
+  sound.ambient("dark");
+  const box = $("shadowBox");
+  $("shadowArt").innerHTML = shadowArt();
+  box.style.display = "block";
+  box.style.opacity = 1;
+  let hp = DOUBTS.length;
+  const showHp = () => {
+    $("shadowHp").textContent = "그림자 " + "●".repeat(hp) + "○".repeat(DOUBTS.length - hp);
+    box.style.setProperty("--s", 0.55 + hp * 0.11);
+  };
+  showHp();
+  for (const [doubt, key] of DOUBTS) {
+    let ok = false;
+    while (!ok) {
+      const others = shuffle(Object.keys(VERSES).filter(k => k !== key && S.verses.includes(k))).slice(0, 2);
+      const cards = shuffle([key, ...others]);
+      const i = await ask("shadow", doubt + "\n\n어떤 말씀 카드로 대답할까요?",
+        cards.map(k => `<span class="ref">📖 ${VERSES[k].ref}</span>${VERSES[k].text}`));
+      ok = cards[i] === key;
+      mark(cards.indexOf(key), i);
+      if (ok) {
+        sound.good(); flash(); hp--; showHp();
+        await wait(700);
+      } else {
+        sound.bad(); shakeStage();
+        box.style.setProperty("--s", 0.55 + hp * 0.11 + 0.15);
+        setLight(S.light - 3);
+        await wait(700);
+        await say("shadow", "흐흐… 그 말씀은 지금 내 말에 맞는 대답이 아니야!");
+        showHp();
+      }
+    }
+  }
+  addPoint();
+  box.style.opacity = 0;
+  await wait(800);
+  box.style.display = "none";
+  S.phase = "dialog";
+  sound.ambient("city");
+}
+
+/* ───────────── 엔딩 기록 ───────────── */
+const ENDINGS = {
+  true: "등불지기",
+  together: "함께 빛나는 밤",
+  alone: "먼저 켜진 등불",
+  dim: "깜빡이는 등불"
+};
+function loadEndings() {
+  try { return JSON.parse(localStorage.getItem("lantern-endings") || "[]"); } catch (e) { return []; }
+}
+function saveEnding(key) {
+  const got = loadEndings();
+  if (!got.includes(key)) got.push(key);
+  try { localStorage.setItem("lantern-endings", JSON.stringify(got)); } catch (e) {}
+  return got;
+}
+function versesHtml() {
+  return S.verses.map(k => `<div class="card-item"><b>${VERSES[k].ref}</b><br>${VERSES[k].text}</div>`).join("") || `<p class="muted">아직 모은 말씀 카드가 없어요.</p>`;
+}
+function openPanel(html) {
+  $("panelBody").innerHTML = html;
+  $("panel").classList.add("show");
+}
+// 엔딩 화면은 바깥을 눌러도 닫히지 않음
+let panelLocked = false;
+$("panel").addEventListener("click", e => {
+  if (panelLocked) return;
+  if (e.target.id === "panel" || e.target.dataset.close !== undefined) $("panel").classList.remove("show");
+});
+$("cardBtn").onclick = () => openPanel(`<div class="tag">말씀 카드</div><h1>📖 ${S.verses.length}장</h1>${versesHtml()}<button class="big-btn ghost" data-close>닫기</button>`);
+$("diaryBtn").onclick = () => openPanel(`<div class="tag">할머니의 일기</div><h1>📜 ${S.diary.size} / 5</h1>
+  ${[...S.diary].sort().map(id => { const scene = Object.keys(CLUES).find(s => CLUES[s][id]); return `<div class="card-item">${CLUES[scene][id][1].replace(/\n/g, "<br>")}</div>`; }).join("") || `<p class="muted">시대마다 어둠 속에 작은 빛으로 숨어 있어요.</p>`}
+  <button class="big-btn ghost" data-close>닫기</button>`);
+$("soundBtn").onclick = () => {
+  sound.setMuted(!sound.muted);
+  $("soundBtn").textContent = sound.muted ? "🔇" : "🔊";
+};
+
+function showEnding(key, title, body) {
+  const got = saveEnding(key);
+  panelLocked = true;
+  S.phase = "idle";
+  dialog.classList.remove("show");
+  openPanel(`
+    <div class="tag">엔딩 ${Object.keys(ENDINGS).indexOf(key) + 1} · ${ENDINGS[key]}</div>
+    <h1>${title}</h1>
+    ${body}
+    <h2>이번 여행</h2>
+    <p>등불 밝기 ${Math.round(S.light)}% · 말씀 카드 ${S.verses.length}장 · 일기 조각 ${S.diary.size}/5</p>
+    <h2>모은 엔딩 ${got.length} / 4</h2>
+    <div class="endings">${Object.entries(ENDINGS).map(([k, n]) => `<div class="${got.includes(k) ? "got" : ""}">${got.includes(k) ? n : "???"}</div>`).join("")}</div>
+    ${key !== "true" ? `<p class="muted" style="margin-top:12px">💡 숨겨진 엔딩: 시대마다 어둠 속 아주 작은 빛을 찾아보세요. (일기 조각 ${S.diary.size}/5)</p>` : ""}
+    <h2>내가 모은 말씀</h2>
+    ${versesHtml()}
+    <button class="big-btn" onclick="location.reload()">처음부터 다시 여행하기</button>
+  `);
+}
+
+/* ───────────── 이야기 ───────────── */
+async function prologue() {
+  await setScene("attic");
+  $("hud").classList.add("show");
+  await say("narr", "10월 31일 저녁. 할머니 댁 다락방 청소를 돕고 있어요. 창밖에서는 벌써 할로윈 음악이 들려와요.");
+  await say("harang", "야, 빨리 끝내고 파티 가자! 나 해골 분장까지 다 했다고. 어때, 무섭지? 💀");
+  await say("narr", "그때 다락방 구석, 오래된 궤짝 쪽에서 무언가가 희미하게 반짝였어요.");
+  await say("harang", "어? 방금 뭐 반짝이지 않았어? 너무 어두워서 하나도 안 보이네…");
+  await explore("attic", "마우스나 손가락을 움직여 어둠을 비춰 보세요. 반짝이는 것을 찾으면 누르세요!", false);
+  await say("harang", "할로윈 소품인가? 한번 켜 볼까?");
+  await say("narr", "하랑이 등불에 손을 대는 순간, 눈부신 빛이 다락방을 가득 채웠어요—");
+  flash();
+  await wait(400);
+}
+
+async function era1() {
+  await setScene("celtic");
+  await titleCard("첫 번째 시대 · 약 2천 년 전", "켈트 마을의 마지막 밤");
+  await say("narr", "차가운 바람이 볼을 스칩니다. 안개 낀 언덕 위에서 커다란 모닥불이 타오르고 있어요.");
+  await say("harang", "여기 어디야?! …와, 다들 얼굴에 재를 바르고 가죽을 뒤집어썼네. 여기도 할로윈 파티야?");
+  await say("eppa", "쉿! 처음 보는 아이들이구나. 그 등불 조심해서 들어. 오늘은 삼하인 밤이야. 여름이 끝나고 어둠의 계절이 시작되는 밤.");
+  await say("eppa", "어른들은 오늘 밤 죽은 자들의 세상과 우리 세상 사이가 얇아진다고 해. 그래서 다들 얼굴을 가리고 숨는 거야.");
+  await say("harang", "…잠깐. 그럼 분장이 원래 그런 뜻이었어?");
+  await explore("celtic", "등불로 마을을 비춰 단서를 찾으세요.");
+  await quiz("eppa", "너희, 이 밤의 이름 기억하니?",
+    ["삼하인 (여름의 끝)", "추석", "부활절", "성탄절"], 0,
+    "삼하인은 추수가 끝나고 겨울이 시작되는 때의 켈트 축제예요. 사람들은 이 밤에 영들이 돌아다닌다고 믿었고, 변장은 그 영들을 피하려는 풍습이었다고 전해져요.");
+  await say("eppa", "이리 와 봐! 오늘 밤엔 사과랑 견과로 앞날을 점칠 수 있어. 네가 나중에 누구랑 결혼할지도 알려 줄게!");
+  await say("harang", "오, 재밌겠다! 우리 해 보자!");
+  const ok = await choice("narr", "어떻게 할까요?", [
+    { text: "\"고마워, 하지만 난 안 할래. 내 앞날은 하나님께 맡길 거야.\"", good: true },
+    { text: "재미로 딱 한 번만 해 본다.", good: false },
+    { text: "하랑이 하는 걸 옆에서 몰래 본다.", good: false }
+  ]);
+  if (ok) {
+    S.friend++;
+    await say("harang", "…그렇게 말하니까 좀 찜찜하긴 하네. 나도 그만둘래.");
+  } else {
+    await say("harang", "와, 신기하다! …근데 등불이 왜 이렇게 어두워졌지?");
+  }
+  await say("narr", "할로윈의 사과 놀이와 점치기는 이 밤에 미래를 엿보려던 풍습에서 나왔어요. 성경은 점과 죽은 자를 부르는 일을 분명하게 금해요.");
+  gainVerse("deut");
+  await say("narr", `📖 ${VERSES.deut.text}\n(${VERSES.deut.ref})`);
+  await say("harang", "내 해골 분장… 원래 귀신한테 안 들키려고 하던 거였다니. 좀 다르게 보인다.");
+  await say("narr", "등불이 다시 흔들리기 시작했어요—");
+  flash();
+}
+
+async function era2() {
+  await setScene("church");
+  await titleCard("두 번째 시대 · 8~9세기 이후", "중세 교회의 종소리");
+  await say("narr", "뎅— 뎅— 종소리가 울려 퍼집니다. 돌로 지은 커다란 교회 앞이에요.");
+  await say("monk", "어서 오십시오, 작은 손님들. 내일은 '모든 성인의 날'입니다. 믿음을 지키다 하나님 곁으로 간 이들을 기억하는 날이지요.");
+  await say("monk", "8세기 무렵 교황께서 11월 1일을 이 날로 정하셨고, 이제는 온 교회가 함께 지킨답니다.");
+  await say("harang", "근데 저기 애들은 왜 집집마다 돌아다녀요? 꼭 사탕 받으러 다니는 것 같은데.");
+  await say("monk", "…옛 풍습은 쉽게 사라지지 않는 법이지요. 직접 살펴보시겠습니까?");
+  await explore("church", "등불로 교회 마당을 비춰 단서를 찾으세요.");
+  await quiz("monk", "그렇다면 '할로윈'이라는 이름은 어디서 왔을까요?",
+    ["'모든 성인의 날 전날 밤(All Hallows' Eve)'이 줄어든 말", "'귀신의 날'이라는 켈트 말", "호박을 뜻하는 영어", "가면을 뜻하는 라틴어"], 0,
+    "이름은 교회 절기에서 왔어요. 하지만 그 밤의 풍습은 교회보다 훨씬 오래된 삼하인에서 이어진 것이었어요.");
+  await say("harang", "이름이 교회에서 왔으면… 할로윈도 그냥 괜찮은 거 아냐?");
+  const ok = await choice("narr", "하랑에게 뭐라고 대답할까요?", [
+    { text: "\"이름은 교회에서 왔지만, 그 밤의 풍습은 삼하인에서 이어진 거야. 이름보다 뿌리를 봐야 해.\"", good: true },
+    { text: "\"맞아, 이름이 교회 거니까 괜찮은 거지.\"", good: false },
+    { text: "\"몰라, 신경 쓰지 마.\"", good: false }
+  ]);
+  if (ok) {
+    S.friend++;
+    await say("harang", "이름보다 뿌리를 봐야 한다… 듣고 보니 맞는 말이네.");
+  } else {
+    await say("harang", "그치? 역시 괜찮은 거야!");
+    await say("narr", "등불이 살짝 어두워졌어요.");
+  }
+  await quiz("child", "저기, 이 빵 받고 기도해 주면 우리 할아버지가 천국에 갈 수 있대요. 진짜예요?",
+    ["살아 있는 사람이 대신 기도해 주면 된다", "예수 그리스도를 믿는 믿음으로, 하나님의 은혜로 구원받는다", "빵을 많이 나누면 된다", "축제에 빠지지 않으면 된다"], 1,
+    "구원은 사람이 대신 해 주는 행사나 대가가 아니라 하나님이 주시는 선물이에요.", "eph2");
+  await say("narr", "이 질문은 몇백 년 뒤, 커다란 망치 소리로 이어집니다…");
+  flash();
+}
+
+async function era3() {
+  await setScene("wittenberg");
+  await titleCard("세 번째 시대 · 1517년 10월 31일", "비텐베르크의 망치 소리");
+  await say("narr", "독일의 작은 도시 비텐베르크. 날짜는 1517년 10월 31일, 바로 할로윈 밤이에요.");
+  await say("luther", "이런 밤에 아이들이 어쩐 일이오? 나는 마르틴 루터라 하오.");
+  await say("luther", "사람들이 돈을 내면 죄의 벌을 줄여 준다는 종이를 사고 있소. 하지만 성경은 구원이 하나님의 은혜라고 말하오!");
+  await say("harang", "와… 역사책에 나오는 그 사람이야!");
+  await explore("wittenberg", "등불로 교회 문 앞을 비춰 단서를 찾으세요.");
+  await say("luther", "이 교회 문에 95개 조항을 붙이려 하오. 그런데 손이 시리구려. 망치를 좀 들어 주겠소?");
+  await hammerGame();
+  await say("narr", "✨ 쾅! 95개 조항이 교회 문에 붙었어요.\n이 일로 종교개혁이 시작되었다고 해요. 그래서 많은 교회는 10월 31일을 할로윈이 아닌 '종교개혁 기념일'로 지켜요.");
+  gainVerse("rom1");
+  await say("narr", `📖 ${VERSES.rom1.text}\n(${VERSES.rom1.ref})`);
+  await quiz("luther", "개혁자들이 다시 붙잡은 세 가지 '오직'이 아닌 것은 무엇이겠소?",
+    ["오직 성경", "오직 믿음", "오직 은혜", "오직 축제"], 3,
+    "'오직 성경, 오직 믿음, 오직 은혜'는 종교개혁의 중심이에요. 사람의 풍습이 아니라 말씀이 기준이라는 고백이에요.");
+  await say("harang", "할로윈 날에 이런 일이 있었다고? 왜 아무도 안 알려 줬지… 이건 좀 멋있다.");
+  flash();
+}
+
+async function era4() {
+  await setScene("ship");
+  await titleCard("네 번째 시대 · 1840년대 ~ 1930년대", "바다 건너 미국으로");
+  await say("narr", "철썩— 파도 소리. 1840년대, 큰 기근을 피해 아일랜드를 떠나 미국으로 가는 배 위예요.");
+  await say("sean", "안녕! 난 숀이야. 고향에선 할로윈 밤에 순무를 파서 등불을 만들었어. '인색한 잭' 이야기 알아?");
+  await say("sean", "잭은 악마를 두 번이나 속였대. 그래서 죽은 뒤 천국에도 못 가고 악마도 안 받아 줘서, 숯불 한 조각을 순무에 넣고 영원히 떠돌게 됐대.");
+  await say("harang", "으… 그게 호박 등불 이야기였어?");
+  await say("sean", "미국엔 순무보다 크고 파기 쉬운 호박이 많대! 거기선 호박으로 만들 거야.");
+  await say("narr", "바닷바람에 등불이 흔들리며 미래의 장면들까지 비춥니다.");
+  await explore("ship", "등불로 갑판과 바다를 비춰 단서를 찾으세요.");
+  await quiz("sean", "그럼 문제! 인색한 잭은 결국 어떻게 됐게?",
+    ["천국에 갔다", "천국도 지옥도 못 가고 등불을 들고 어둠 속을 떠돈다", "왕이 되었다", "호박 농부가 되었다"], 1,
+    "잭오랜턴은 갈 곳 없이 어둠 속을 떠도는 영혼의 등불이에요. 하지만 성경은 길 잃은 사람을 위한 진짜 빛이 있다고 말해요.", "john8");
+  await quiz("sean", "미국 아이들은 할로윈 밤에 집집마다 \"트릭 오어 트릿!\"이라고 외친대. 무슨 뜻일까?",
+    ["안녕하세요, 행복한 할로윈!", "사탕 주세요, 안 주면 장난칠 거예요!", "고맙습니다!", "같이 놀자!"], 1,
+    "귀엽게 들리지만 '안 주면 골탕 먹이겠다'는 뜻이에요. 1930년대 할로윈 장난이 심했던 시절에 퍼진 말이에요.");
+  await say("harang", "그래도… 사탕 받는 건 좋잖아.");
+  const ok = await choice("narr", "하랑에게 뭐라고 말할까요?", [
+    { text: "\"받아 내는 날 말고, 우리가 먼저 나눠 주는 날로 만들면 어때?\"", good: true },
+    { text: "\"맞아, 많이 받으면 최고지!\"", good: false },
+    { text: "\"안 주는 집엔 진짜 장난치자!\"", good: false }
+  ]);
+  if (ok) {
+    S.friend++;
+    await say("harang", "먼저 나눠 주는 날… 그거 괜찮다. 받는 것보다 더 신날 수도 있겠는데?");
+  } else {
+    await say("harang", "그치? 히히.");
+    await say("narr", "등불이 조금 어두워졌어요.");
+  }
+  await say("narr", "그리스도인은 받아 내는 사람이 아니라 먼저 선을 베푸는 사람으로 부름받았어요.");
+  gainVerse("rom12");
+  await say("narr", `📖 ${VERSES.rom12.text}\n(${VERSES.rom12.ref})`);
+  flash();
+}
+
+async function era5() {
+  await setScene("modern");
+  await titleCard("다섯 번째 시대 · 오늘", "10월 31일, 우리 동네");
+  await say("narr", "눈을 떠 보니 우리 동네 거리예요. 오늘, 10월 31일 밤. 가게마다 해골과 피 묻은 가면이 걸려 있어요.");
+  await say("harang", "돌아왔다…! 근데 이상해. 아까는 그냥 신났는데, 지금은 다 다르게 보여.");
+  await explore("modern", "등불로 거리를 비춰 단서를 찾으세요.");
+  await say("narr", "띠링! 하랑의 휴대폰에 파티 초대 메시지가 왔어요. 둘은 잠깐 들러 보기로 했어요.");
+  await say("party", "왔구나! 마침 잘 왔어. 이거 봐, 위저 보드! 오늘 밤 귀신 한번 불러 보자!");
+  const ok = await choice("narr", "어떻게 할까요?", [
+    { text: "\"난 안 할래. 대신 우리 다른 게임 하자!\" 웃으며 다른 놀이를 제안한다.", good: true },
+    { text: "다들 하니까 같이 한다.", good: false },
+    { text: "무서우니까 아무 말 없이 구경만 한다.", good: false }
+  ]);
+  if (ok) {
+    S.friend++;
+    await say("harang", "…나도 안 할래. 우리 다른 거 하자.");
+  } else {
+    await say("harang", "어… 등불이 거의 꺼질 것 같아.");
+  }
+  await say("narr", "장난처럼 보여도 죽은 자를 부르는 놀이는 성경이 금하는 일이에요. 친구를 탓하기보다 웃으며 다른 길을 보여 주는 게 빛의 자녀다운 행동이에요.");
+  gainVerse("eph5");
+  await say("narr", `📖 ${VERSES.eph5.text}\n(${VERSES.eph5.ref})`);
+  await say("narr", "파티를 나와 집으로 가는 어두운 골목. 갑자기 등불이 크게 흔들립니다.");
+  await say("harang", "저, 저기… 해골 장식 뒤에서 뭔가 움직였어!");
+  await quiz("narr", "이럴 때 기억할 말씀은 무엇일까요?",
+    ["너희 안에 계신 이가 세상에 있는 자보다 크심이라", "무서우면 무조건 도망쳐라", "귀신은 할로윈에만 나온다", "등불만 있으면 다 괜찮다"], 0,
+    "그리스도인은 어둠을 즐기지도, 두려워하지도 않아요. 어둠보다 크신 분이 함께 계시기 때문이에요.", "john4");
+  await say("narr", "골목 끝의 어둠이 뭉치더니, 거대한 그림자가 되었어요!");
+  $("shadowArt").innerHTML = shadowArt();
+  await say("shadow", "흐흐… 등불 하나로 날 이길 수 있을까? 너희 마음에 의심을 잔뜩 심어 주지!");
+  await say("narr", "지금까지 모은 말씀 카드로 그림자의 말에 대답하세요!");
+  await battle();
+  await say("narr", "그림자가 흩어지고, 골목이 등불 빛으로 환해졌어요.");
+  S.friend++;
+  await say("harang", "…너 아까 진짜 멋있었어. 말씀이 이렇게 힘이 있는 줄 몰랐어.");
+}
+
+async function finale() {
+  const together = S.friend >= 4;
+  await say("narr", "집 앞 갈림길. 왼쪽 길에선 파티 음악이, 오른쪽 교회에선 '빛의 축제' 찬양 소리가 들려와요.");
+  if (together) {
+    S.harangPaint = false;
+    await say("harang", "나… 오늘은 너랑 같이 갈래. 해골 분장도 지웠어. 어때?");
+  } else {
+    await say("harang", "난… 그래도 파티에 가 볼래. 넌 어떻게 할 거야?");
+  }
+  const pick = await ask("narr", "오늘 밤, 너는 어디로 갈까요?", [
+    "🎃 해골과 가면이 가득한 할로윈 파티에 간다",
+    "🏮 교회의 '빛의 축제'에 가서 이웃 아이들에게 말씀 사탕을 나눈다"
+  ]);
+
+  if (pick === 0) {
+    sound.bad();
+    setLight(S.light / 2);
+    await say("narr", "파티는 시끄러웠지만 마음 한구석이 계속 허전했어요. 손에 든 등불은 겨우 깜빡일 뿐이에요.");
+    return showEnding("dim", "등불이 다시 희미해졌어요…",
+      `<p>다섯 시대에서 본 장면들이 계속 마음에 남아 있어요.</p><p style="color:var(--gold)">"너희는 세상의 빛이라" (마태복음 5:14)</p><p class="muted">빛은 언제든 다시 고를 수 있어요.</p>`);
+  }
+
+  sound.good();
+  setLight(100);
+  await setScene("festival");
+  if (together) {
+    await say("narr", "교회 마당엔 등불이 가득하고, 아이들이 다윗과 에스더 옷을 입고 웃고 있어요.");
+    await say("harang", "분장 지우니까 시원하다! 사탕에 쪽지 붙이는 거, 내가 할게! \"예수님은 세상의 빛이에요.\"");
+    await say("narr", "두 개의 등불이 나란히 빛났어요.");
+  } else {
+    await say("narr", "교회 마당엔 등불이 가득해요. 너는 이웃 아이들에게 사탕과 쪽지를 나눴어요. \"예수님은 세상의 빛이에요.\"");
+    await say("narr", "하랑에게 메시지를 보냈어요. \"오늘 같이 본 거 잊지 마. 다음엔 같이 오자!\"\n잠시 뒤 답장이 왔어요. \"…생각해 볼게. 고마워.\"");
+  }
+
+  if (S.diary.size === 5) {
+    await setScene("attic");
+    await say("narr", "축제가 끝나고 다락방으로 돌아오니, 누군가 등불 옆에 앉아 있었어요.");
+    await say("grandma", "돌아왔구나. 그 등불, 할미가 네 나이 때 처음 들었던 거란다.");
+    await say("grandma", "할미도 처음엔 할로윈이 그냥 재미있는 날인 줄 알았지. 등불이 뿌리를 보여 주기 전까지는.");
+    await say("grandma", "일기 조각을 다 모았구나. 그럼 이제 알겠지? 등불은 혼자 들고 있으라고 주신 게 아니야.");
+    await say("grandma", "이제 네가 등불지기란다. 다음 사람에게 이 빛을 건네주렴.");
+    return showEnding("true", "🏮 새로운 등불지기",
+      `<p>할머니의 등불이 너에게 이어졌어요. 어둠을 두려워하지도, 즐기지도 않고 빛을 전하는 사람. 그게 등불지기예요.</p>
+       <h2>할머니의 일기</h2>${[1, 2, 3, 4, 5].map(n => { const id = "diary" + n; const scene = Object.keys(CLUES).find(s => CLUES[s][id]); return `<div class="card-item">${CLUES[scene][id][1].replace(/\n/g, "<br>")}</div>`; }).join("")}`);
+  }
+  if (together) {
+    return showEnding("together", "✨ 함께 빛나는 밤",
+      `<p>너는 빛을 골랐고, 하랑도 함께 빛을 골랐어요. 1517년의 같은 밤 루터가 말씀을 붙잡았듯이, 오늘 밤 두 사람도 말씀을 붙잡았어요.</p>`);
+  }
+  return showEnding("alone", "🏮 먼저 켜진 등불",
+    `<p>오늘은 혼자였지만, 네 등불은 환하게 빛났어요. 하랑의 마음에도 작은 불씨가 남았어요. 다음엔 하랑의 선택이 달라질지도 몰라요.</p>`);
+}
+
+async function game() {
+  await prologue();
+  await era1();
+  await era2();
+  await era3();
+  await era4();
+  await era5();
+  await finale();
+}
+
+/* ───────────── 시작 화면 ───────────── */
+bgEl.innerHTML = SCENES.attic();
+particleKind = "dust";
+const got = loadEndings();
+if (got.length) $("startEndings").textContent = `모은 엔딩 ${got.length} / 4`;
+$("startBtn").onclick = () => {
+  sound.init();
+  $("start").classList.remove("show");
+  game();
+};
+</script>
 </body>
 </html>
