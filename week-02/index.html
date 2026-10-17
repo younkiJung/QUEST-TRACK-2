@@ -1,0 +1,772 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>용어 달리기 퀴즈</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Jua&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #f4f1ea; --card: #ffffff; --ink: #1f2328; --muted: #5f6670; --line: #e2ddd2;
+  --accent: #ff7a2f; --accent-ink: #ffffff; --accent-soft: #fff0e6;
+  --ok: #1d8a4b; --ok-bg: #e2f5e9; --bad: #c93c3c; --bad-bg: #fde8e8; --chip: #f0ebe1;
+  --heart: #e8434f;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15171a; --card: #1f2226; --ink: #eceff3; --muted: #a3abb5; --line: #353a40;
+    --accent: #ff8a45; --accent-ink: #1a1a1a; --accent-soft: #3a2619;
+    --ok: #4ad07f; --ok-bg: #173323; --bad: #ff7272; --bad-bg: #3a1d1f; --chip: #2a2e33;
+    --heart: #ff5a66;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15171a; --card: #1f2226; --ink: #eceff3; --muted: #a3abb5; --line: #353a40;
+  --accent: #ff8a45; --accent-ink: #1a1a1a; --accent-soft: #3a2619;
+  --ok: #4ad07f; --ok-bg: #173323; --bad: #ff7272; --bad-bg: #3a1d1f; --chip: #2a2e33;
+  --heart: #ff5a66;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+  line-height: 1.55;
+}
+.wrap { max-width: 760px; margin: 0 auto; padding: 20px 16px 48px; }
+h1, h2, .display { font-family: "Jua", system-ui, sans-serif; font-weight: 400; letter-spacing: 0; }
+.top h1 { margin: 0; font-size: 30px; }
+.top p { margin: 2px 0 14px; color: var(--muted); }
+
+/* 게임 무대 */
+.stage { background: var(--card); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+.hud { display: flex; align-items: center; gap: 12px; padding: 10px 14px; }
+.hearts { display: flex; gap: 3px; font-size: 20px; line-height: 1; }
+.hearts span { color: var(--heart); transition: transform .2s, opacity .3s, filter .3s; }
+.hearts span.lost { opacity: .25; filter: grayscale(1); }
+.hearts span.pop { animation: pop .5s ease; }
+@keyframes pop { 0% { transform: scale(1); } 30% { transform: scale(1.6) rotate(-15deg); } 100% { transform: scale(1); } }
+.hud-mid { flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.bar { flex: 1; height: 8px; background: var(--chip); border-radius: 99px; overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 99px; transition: width .4s; }
+.hud-mid span, .dist { font-size: 14px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dist { font-weight: 700; color: var(--ink); }
+canvas { display: block; width: 100%; height: auto; aspect-ratio: 720 / 220; }
+
+/* 화면 */
+.screen { margin-top: 16px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px; }
+.screen h2 { font-size: 24px; margin: 0 0 12px; }
+.parts { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.part {
+  text-align: left; background: var(--card); color: var(--ink); border: 2px solid var(--line);
+  border-radius: 14px; padding: 14px; cursor: pointer; font: inherit; transition: border-color .15s, transform .15s;
+}
+.part:hover, .part:focus-visible { border-color: var(--accent); transform: translateY(-2px); outline: none; }
+.part .tag { font-family: "Jua", sans-serif; color: var(--accent); font-size: 18px; }
+.part .name { display: block; font-weight: 700; font-size: 17px; margin: 2px 0; }
+.part .desc { display: block; font-size: 13px; color: var(--muted); }
+.part.all { grid-column: 1 / -1; background: var(--accent-soft); }
+.rule { color: var(--muted); font-size: 14px; margin: 12px 0 0; }
+
+.meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 14px; color: var(--muted); margin-bottom: 8px; }
+.chip { background: var(--accent-soft); color: var(--accent); font-weight: 700; padding: 2px 10px; border-radius: 99px; }
+.stars { color: #f0a500; letter-spacing: 1px; }
+.qtext { font-size: 19px; font-weight: 700; margin: 0 0 14px; word-break: keep-all; overflow-wrap: anywhere; }
+.blank {
+  display: inline-block; min-width: 72px; text-align: center; padding: 0 8px; margin: 0 2px;
+  border-bottom: 3px solid var(--accent); color: var(--accent);
+}
+.blank.filled { color: var(--ok); border-color: var(--ok); }
+
+.opts { display: grid; gap: 8px; }
+.opt {
+  display: flex; gap: 10px; align-items: flex-start; width: 100%; text-align: left;
+  background: var(--card); color: var(--ink); border: 2px solid var(--line); border-radius: 12px;
+  padding: 11px 14px; font: inherit; font-size: 16px; cursor: pointer; word-break: keep-all; overflow-wrap: anywhere;
+}
+.opt:hover:not(:disabled) { border-color: var(--accent); }
+.opt:disabled { cursor: default; }
+.opt .n { color: var(--accent); font-weight: 700; flex: none; }
+.opt.ok { border-color: var(--ok); background: var(--ok-bg); }
+.opt.bad { border-color: var(--bad); background: var(--bad-bg); }
+.opt.ok .n { color: var(--ok); } .opt.bad .n { color: var(--bad); }
+.opt.ok.mine, .slot.ok.mine { background: var(--ok); border-color: var(--ok); color: var(--card); }
+.opt.ok.mine .n, .slot.ok.mine b, .slot.ok.mine small { color: var(--card); }
+.ox { grid-template-columns: 1fr 1fr; }
+.ox .opt { justify-content: center; font-family: "Jua", sans-serif; font-size: 44px; padding: 14px; line-height: 1.1; }
+
+.sub-label { font-size: 13px; color: var(--muted); margin: 4px 0 6px; font-weight: 700; }
+.slots { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 12px; }
+.slot {
+  min-height: 64px; border: 2px dashed var(--line); border-radius: 12px; padding: 6px; font: inherit; font-size: 13px;
+  background: transparent; color: var(--ink); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; word-break: keep-all;
+}
+.slot small { color: var(--muted); font-size: 11px; }
+.slot.filled { border-style: solid; border-color: var(--accent); background: var(--accent-soft); }
+.slot.filled b { color: var(--accent); }
+.slot.ok { border-color: var(--ok); background: var(--ok-bg); } .slot.ok b { color: var(--ok); }
+.slot.bad { border-color: var(--bad); background: var(--bad-bg); } .slot.bad b { color: var(--bad); }
+.slot:disabled { cursor: default; }
+.opt.used { opacity: .35; }
+
+.descs { display: grid; gap: 6px; margin-bottom: 12px; }
+.desc { background: var(--chip); border-radius: 10px; padding: 8px 12px; font-size: 15px; word-break: keep-all; }
+.desc b { color: var(--accent); margin-right: 6px; }
+.trow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); }
+.trow .term { flex: 1 1 140px; font-weight: 700; }
+.trow .term b { color: var(--accent); margin-right: 6px; }
+.picks { display: flex; gap: 6px; }
+.pick {
+  width: 42px; height: 40px; border-radius: 10px; border: 2px solid var(--line); background: var(--card); color: var(--ink);
+  font: inherit; font-weight: 700; cursor: pointer;
+}
+.pick.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.pick.ok { background: var(--ok); border-color: var(--ok); color: #fff; }
+.pick.bad { background: var(--bad); border-color: var(--bad); color: #fff; }
+.pick.should { border-color: var(--ok); color: var(--ok); }
+.pick:disabled { cursor: default; }
+
+.row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+button.primary, button.ghost {
+  font: inherit; font-weight: 700; font-size: 16px; border-radius: 12px; padding: 11px 18px; cursor: pointer; border: 2px solid var(--accent);
+}
+button.primary { background: var(--accent); color: var(--accent-ink); }
+button.ghost { background: transparent; color: var(--accent); }
+button.primary:disabled { opacity: .4; cursor: default; }
+
+.feedback { margin-top: 14px; border-radius: 12px; padding: 12px 14px; border: 2px solid; }
+.feedback.ok { border-color: var(--ok); background: var(--ok-bg); }
+.feedback.bad { border-color: var(--bad); background: var(--bad-bg); }
+.feedback .head { font-family: "Jua", sans-serif; font-size: 21px; }
+.feedback.ok .head { color: var(--ok); } .feedback.bad .head { color: var(--bad); }
+.feedback p { margin: 4px 0 0; word-break: keep-all; overflow-wrap: anywhere; }
+.actions { display: flex; justify-content: flex-end; margin-top: 12px; }
+
+.result-title { font-size: 30px; margin: 0; }
+.score { font-family: "Jua", sans-serif; font-size: 56px; line-height: 1.1; margin: 8px 0; color: var(--accent); }
+.score small { font-size: 26px; color: var(--muted); }
+.stats { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; padding: 0; list-style: none; }
+.stats li { background: var(--chip); border-radius: 99px; padding: 3px 12px; font-size: 14px; }
+.misses { margin-top: 18px; }
+.misses h3 { font-size: 16px; margin: 0 0 8px; }
+.miss { border-top: 1px solid var(--line); padding: 8px 0; font-size: 14px; word-break: keep-all; overflow-wrap: anywhere; }
+.miss .ans { color: var(--ok); font-weight: 700; }
+
+@media (max-width: 520px) {
+  .top h1 { font-size: 26px; }
+  .qtext { font-size: 17px; }
+  .slots { grid-template-columns: repeat(2, 1fr); }
+  .hearts { font-size: 17px; }
+}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header class="top">
+    <h1>용어 달리기 퀴즈</h1>
+    <p>맞히면 앞으로 달리고, 틀리면 장애물에 쿵! 하트를 지키며 끝까지 달려 보세요.</p>
+  </header>
+
+  <section class="stage" aria-label="달리기 게임">
+    <div class="hud">
+      <div class="hearts" id="hearts" aria-label="하트"></div>
+      <div class="hud-mid"><div class="bar"><i id="bar"></i></div><span id="prog">0 / 0</span></div>
+      <div class="dist" id="dist">0 m</div>
+    </div>
+    <canvas id="game" width="720" height="220"></canvas>
+  </section>
+
+  <section class="screen" id="start">
+    <div class="card">
+      <h2>Part 를 골라 출발!</h2>
+      <div class="parts" id="parts"></div>
+      <p class="rule">하트 5개로 시작 · 맞히면 10 m 전진 · 틀리면 장애물에 부딪혀 하트 −1 · 하트가 다 떨어지면 게임 끝</p>
+    </div>
+  </section>
+
+  <section class="screen" id="quiz" hidden>
+    <div class="card">
+      <div class="meta"><span class="chip" id="qType"></span><span id="qNum"></span><span class="stars" id="qLv"></span></div>
+      <p class="qtext" id="qText"></p>
+      <div id="answer"></div>
+      <div class="feedback" id="feedback" hidden></div>
+      <div class="actions"><button class="primary" id="nextBtn" hidden>다음 문제 →</button></div>
+    </div>
+  </section>
+
+  <section class="screen" id="result" hidden>
+    <div class="card">
+      <h2 class="result-title" id="rTitle"></h2>
+      <div class="score" id="rScore"></div>
+      <ul class="stats" id="rStats"></ul>
+      <div class="row">
+        <button class="primary" id="retryBtn">다시 풀기</button>
+        <button class="ghost" id="homeBtn">다른 Part 고르기</button>
+      </div>
+      <div class="misses" id="rMiss"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+// ===== 문제 목록 (받은 목록 그대로) =====
+// t: mc 4지선다 · ox · blank 빈칸 · order 순서 · match 짝 맞히기 · sit 상황 · fix 부탁 고치기
+// a: 보기 번호(0부터) / 'O'·'X' / 순서 문자열 / 짝 맞히기는 용어 1~4 에 맞는 설명 번호(가=0 ...)
+const QUESTIONS = [
+  // Part 1 · Git · GitHub · Pages
+  { n: 1, p: 1, t: 'mc', l: 1, q: '고칠 때마다 저장 지점을 찍어 두는, 파일의 세이브 포인트 같은 프로그램은?', c: ['Python', 'Orca', 'Git', 'Node.js'], a: 2, e: 'Git 은 저장 지점을 찍어 두고, 망가지면 잘 되던 지점으로 돌아가게 해 줍니다.' },
+  { n: 2, p: 1, t: 'blank', l: 1, q: 'Git 이 지켜보는 폴더를 (    )(이)라고 합니다.', c: ['저장소', '휴지통', '바탕화면', '토큰'], a: 0, e: '저장소는 영어로 repository, 줄여서 repo 라고 합니다.' },
+  { n: 3, p: 1, t: 'ox', l: 2, q: '저장소 안에 숨어 있는 .git 폴더가 Git 의 기록장이다.', a: 'O', e: '저장 지점(커밋)이 모두 .git 폴더 안에 기록됩니다.' },
+  { n: 4, p: 1, t: 'mc', l: 1, q: '바뀐 것을 묶어 저장 지점 하나로 남기는 일은?', c: ['클론', '풀', '푸시', '커밋'], a: 3, e: '"커밋해 줘" 하면 쌓인 변경을 묶어 기록장에 점 하나로 남깁니다.' },
+  { n: 5, p: 1, t: 'mc', l: 2, q: '커밋 메시지(이름표)로 가장 좋은 것은?', c: ['ㅇㅇ', '점수 표시 추가', '1', '수정'], a: 1, e: '무엇을 바꿨는지 한 줄로 적어야 나중에 이름표만 보고 그때를 찾습니다.' },
+  { n: 6, p: 1, t: 'ox', l: 2, q: 'Ctrl+S 로 저장만 해 두어도 예전 모습으로 돌아갈 수 있는 점이 생긴다.', a: 'X', e: '저장은 지금 모습으로 덮어쓰기, 돌아갈 점은 커밋해야 남습니다.' },
+  { n: 7, p: 1, t: 'mc', l: 2, q: '두 커밋을 비교했을 때 빨간색 − 줄은 무엇일까?', c: ['들어온 줄', '빠진 줄', '그대로인 줄', '오류가 난 줄'], a: 1, e: '빨강 − 는 빠진 줄, 초록 + 는 들어온 줄입니다.' },
+  { n: 8, p: 1, t: 'blank', l: 2, q: '두 커밋의 차이, 즉 바뀐 줄을 영어로 (    )(이)라고 합니다.', c: ['push', 'token', 'repo', 'diff'], a: 3, e: 'diff 는 차이(difference)를 줄인 말입니다.' },
+  { n: 9, p: 1, t: 'match', l: 2, q: '용어와 설명을 짝 지어 봅니다.', terms: ['로컬', '원격', 'Git', 'GitHub'], c: ['인터넷에 있는 저장소', '내 컴퓨터에 있는 저장소', '저장소를 인터넷에 보관해 주는 사이트', '내 컴퓨터에서 바뀐 것을 커밋으로 기록하는 프로그램'], a: [1, 0, 3, 2], e: 'Git 은 프로그램, GitHub 는 보관소입니다. 같은 저장소가 로컬과 원격 두 곳에 있습니다.' },
+  { n: 10, p: 1, t: 'mc', l: 1, q: '내 컴퓨터의 커밋을 GitHub 로 올려 보내는 일은?', c: ['푸시', '새로 고침', '풀', '커밋'], a: 0, e: '푸시는 파일 하나가 아니라 저장 지점 묶음을 올립니다.' },
+  { n: 11, p: 1, t: 'ox', l: 2, q: '커밋을 하나도 하지 않았어도 푸시하면 바뀐 파일이 GitHub 로 올라간다.', a: 'X', e: '푸시는 커밋을 올리는 일이라, 커밋이 없으면 올릴 것도 없습니다.' },
+  { n: 12, p: 1, t: 'mc', l: 2, q: 'GitHub 에 있는 저장소를 내 컴퓨터로 처음 통째로 받아 오는 일은?', c: ['풀', '푸시', '클론', '커밋'], a: 2, e: '처음 한 번은 클론, 이미 있으면 풀로 새 커밋만 받습니다.' },
+  { n: 13, p: 1, t: 'sit', l: 3, q: '집 컴퓨터에 이미 저장소가 있다. 학원에서 올린 새 커밋만 받아 오고 싶을 때 하는 부탁은?', c: ['"다시 푸시해 줘"', '"저장소를 클론해 줘"', '"GitHub 의 새 커밋을 풀 해 줘"', '"지금 상태를 커밋해 줘"'], a: 2, e: '이미 저장소가 있으면 통째로 받지 않고 풀로 새 커밋만 받습니다.' },
+  { n: 14, p: 1, t: 'mc', l: 1, q: '저장소의 HTML 을 인터넷 주소로 누구나 볼 수 있게 해 주는 무료 전시장은?', c: ['GitHub Pages', '커밋', '컨텍스트', '토큰'], a: 0, e: 'GitHub Pages 는 저장소의 HTML 을 인터넷 주소로 보여 줍니다.' },
+  { n: 15, p: 1, t: 'blank', l: 3, q: '주소 my-id.github.io/QUEST-TRACK-2/week-02/ 에서 QUEST-TRACK-2 는 (    ) 이름입니다.', c: ['GitHub 아이디', '폴더', '모델', '저장소'], a: 3, e: 'my-id 는 GitHub 아이디, QUEST-TRACK-2 는 저장소, week-02 는 폴더입니다.' },
+  { n: 16, p: 1, t: 'order', l: 3, q: '고친 게임을 친구가 주소로 보기까지, 일어나는 순서대로 놓아 봅니다.', c: ['파일 고치기', '푸시', '커밋', '1~2분 뒤 Pages 반영'], a: 'ACBD', e: '고치고, 커밋해서 남기고, 푸시로 올리면 Pages 가 1~2분 뒤 새 모습을 보여 줍니다.' },
+  { n: 17, p: 1, t: 'ox', l: 2, q: '푸시하자마자 새로 고침했는데 옛 모습이 보이면 페이지가 망가진 것이다.', a: 'X', e: 'Pages 가 페이지를 다시 만드는 1~2분 동안은 옛 모습이 보입니다. 기다렸다가 F5 를 누릅니다.' },
+  { n: 18, p: 1, t: 'mc', l: 3, q: '친구가 내 컴퓨터 안 파일 주소(file:///C:/...)를 입력해도 게임이 열리지 않는 까닭은?', c: ['커밋 메시지가 짧아서', '친구 컴퓨터에는 그 파일이 없어서', '인터넷이 느려서', '파일 이름이 영어라서'], a: 1, e: '그래서 늘 켜져 있는 서버에 두고, 누구나 인터넷 주소로 찾아오게 합니다.' },
+
+  // Part 2 · AI 를 이해하는 말
+  { n: 19, p: 2, t: 'mc', l: 1, q: 'LLM 은 무엇의 줄임말일까?', c: ['Large Language Model', 'Long Line Maker', 'Local Link Manager', 'Light Learning Machine'], a: 0, e: '엄청 많은 글을 읽고(Large) 사람의 말을 다루는(Language) 프로그램(Model)입니다.' },
+  { n: 20, p: 2, t: 'ox', l: 2, q: 'AI 는 검색처럼 이미 있는 글을 찾아 그대로 보여 준다.', a: 'X', e: 'AI 는 새 문장을 한 조각씩 이어 씁니다. 그래서 답이 매번 조금씩 다릅니다.' },
+  { n: 21, p: 2, t: 'blank', l: 2, q: 'LLM 은 수많은 글에서 (    ) 말을 가리고 맞혀 보는 연습으로 배웁니다.', c: ['영어', '다음', '맨 처음', '가장 긴'], a: 1, e: '가린 다음 말을 맞혀 보고 정답과 비교하는 연습을 셀 수 없이 반복합니다.' },
+  { n: 22, p: 2, t: 'order', l: 2, q: 'AI 가 답을 만드는 순서대로 놓아 봅니다.', c: ['그중 그럴듯한 말을 골라 붙인다', '지금까지의 글을 본다', '다음 말 후보를 떠올린다', '답이 끝날 때까지 반복한다'], a: 'BCAD', e: '지금까지 글을 보고 후보를 떠올린 뒤, 그럴듯한 말을 골라 붙이기를 반복합니다.' },
+  { n: 23, p: 2, t: 'mc', l: 1, q: '모르는 것도 그럴듯하게 지어낸 틀린 말을 무엇이라고 할까?', c: ['컨텍스트', '커밋', '클론', '할루시네이션'], a: 3, e: 'LLM 은 모르는 것도 그럴듯하게 이어 쓸 때가 있습니다.' },
+  { n: 24, p: 2, t: 'sit', l: 3, q: 'AI 가 "퀴즈를 다 만들었습니다" 라고 했다. 할루시네이션을 막으려면?', c: ['결과를 직접 열어 정답을 확인한다', '같은 부탁을 열 번 보낸다', '바로 /clear 한다', '그냥 믿고 친구에게 보낸다'], a: 0, e: '다 됐다는 말만 믿지 않고, 결과를 직접 열어 내 눈으로 확인합니다.' },
+  { n: 25, p: 2, t: 'mc', l: 1, q: 'AI 가 글을 읽을 때 잘게 나누는 조각의 이름은?', c: ['폴더', '픽셀', '토큰', '커밋'], a: 2, e: 'AI 는 글을 토큰이라는 조각으로 나누고, 다음 말 맞히기도 한 토큰씩 합니다.' },
+  { n: 26, p: 2, t: 'ox', l: 2, q: '글자 수와 토큰(조각) 수는 언제나 똑같다.', a: 'X', e: '한글은 1~2글자, 영어는 단어나 단어 조각이 한 토큰이라 글자 수와 다릅니다.' },
+  { n: 27, p: 2, t: 'mc', l: 3, q: '토큰 수와 관계가 없는 것은?', c: ['AI 를 쓰는 비용', '답하는 데 걸리는 시간', '내 GitHub 아이디', 'AI 가 한 번에 볼 수 있는 양'], a: 2, e: '볼 수 있는 양, 비용, 시간은 모두 토큰으로 셉니다.' },
+  { n: 28, p: 2, t: 'blank', l: 1, q: 'AI 가 지금 펼쳐 놓고 보고 있는 책상 전부를 (    )(이)라고 합니다.', c: ['컨텍스트', '저장소', '모델', 'diff'], a: 0, e: '대화, 읽은 파일, CLAUDE.md 가 책상(컨텍스트)에 올라갑니다.' },
+  { n: 29, p: 2, t: 'mc', l: 2, q: 'Claude Code 하단 정보줄의 ① 막대가 보여 주는 것은?', c: ['커밋 개수', '인터넷 속도', '지금 쓰는 모델', '책상(컨텍스트)이 찬 정도'], a: 3, e: '① 막대는 컨텍스트, ② 칸은 모델입니다.' },
+  { n: 30, p: 2, t: 'ox', l: 3, q: '책상이 가득 차면 지난 대화를 지우지 않고 요약본으로 접는다.', a: 'O', e: '요약본은 짧아서 세부가 흐려질 수 있습니다.' },
+  { n: 31, p: 2, t: 'sit', l: 2, q: '다른 새 작업을 시작하기 전에 책상을 비우는 명령은?', c: ['/quiz', '/clear', '/push', '/save'], a: 1, e: '/clear 는 새 작업 전에 책상(컨텍스트)을 비웁니다.' },
+  { n: 32, p: 2, t: 'mc', l: 3, q: '/clear 를 해도 규칙과 목표가 남아 있는 까닭은?', c: ['Pages 에 올려 두어서', '매번 다시 읽히는 CLAUDE.md 에 적어 두어서', '커밋을 해 두어서', '토큰이 많아서'], a: 1, e: 'CLAUDE.md 는 새 대화의 첫 부탁보다 먼저 다시 읽히는 메모입니다.' },
+  { n: 33, p: 2, t: 'match', l: 2, q: 'Claude 모델 4형제와 설명을 짝 지어 봅니다.', terms: ['Fable', 'Opus', 'Sonnet', 'Haiku'], c: ['빠르고 균형 잡힌 모델', '가장 빠르고 가벼운 모델', '가장 똑똑하고 가장 비싼 모델', '깊게 생각하는 강한 모델(우리 수업)'], a: [2, 3, 0, 1], e: '똑똑할수록 느리고 비쌉니다. 우리 수업은 Opus 하나를 씁니다.' },
+  { n: 34, p: 2, t: 'mc', l: 1, q: '하단 정보줄 ② 칸에 보이는, 우리 수업에서 쓰는 모델은?', c: ['Fable', 'Opus', 'Sonnet', 'Haiku'], a: 1, e: '수업에서는 Opus 하나를 씁니다.' },
+  { n: 35, p: 2, t: 'ox', l: 1, q: 'Claude 도 LLM 의 하나다.', a: 'O', e: 'Claude 처럼 엄청 많은 글을 읽고 말을 다루는 AI 를 LLM 이라고 부릅니다.' },
+  { n: 36, p: 2, t: 'sit', l: 2, q: 'AI 에게 같은 질문을 다시 했더니 이번엔 다른 이름을 지어 줬다. 왜일까?', c: ['인터넷이 끊겨서', '커밋을 안 해서', 'AI 가 고장 나서', '다음 말을 매번 새로 골라 이어 쓰기 때문에'], a: 3, e: 'AI 는 검색처럼 같은 글을 찾지 않고, 매번 새 문장을 한 조각씩 만듭니다.' },
+
+  // Part 3 · 찾아서 고치는 부탁
+  { n: 37, p: 3, t: 'mc', l: 1, q: 'Claude Code 에게 "재생 버튼 색만 초록으로 바꿔 줘" 라고 하면?', c: ['그 부분을 찾아 그 부분만 고친다', '아무것도 하지 않는다', '새 파일을 만든다', '파일 전체를 처음부터 다시 쓴다'], a: 0, e: '파일을 직접 열어 읽고, 고칠 줄을 찾아 그 줄만 바꿉니다.' },
+  { n: 38, p: 3, t: 'order', l: 2, q: 'Claude Code 가 고치는 4단계를 순서대로 놓아 봅니다.', c: ['파일 찾아 읽기', '그 부분만 수정하기', '부탁 이해하기', '고칠 곳 정하기'], a: 'CADB', e: '먼저 읽고, 찾고, 그다음 고칩니다.' },
+  { n: 39, p: 3, t: 'ox', l: 2, q: '파일 전체를 통째로 다시 쓰면 잘 되던 곳까지 바뀔 수 있다.', a: 'O', e: 'TRACK 1 에서 재생 버튼만 바꾸려다 볼륨 칸이 사라진 것처럼, 통째로 다시 쓰면 다른 곳도 바뀝니다.' },
+  { n: 40, p: 3, t: 'mc', l: 2, q: '그 부분만 고칠 때 좋은 점이 아닌 것은?', c: ['잘 되던 곳이 망가지지 않는다', '바뀐 줄로 확인할 수 있다', '파일이 저절로 Pages 에 올라간다', '빠르다'], a: 2, e: 'Pages 에 올리려면 커밋하고 푸시해야 합니다.' },
+  { n: 41, p: 3, t: 'sit', l: 2, q: '"색 바꿔 줘" 라고만 부탁하면 어떤 일이 생길까?', c: ['저절로 커밋된다', '파일이 지워진다', '색이 들어간 줄이 많아 AI 가 어디인지 헷갈린다', '정확히 한 줄만 바로 바뀐다'], a: 2, e: '모호하면 후보가 많아집니다. 어디를 바꿀지 말해 줍니다.' },
+  { n: 42, p: 3, t: 'blank', l: 1, q: '또렷한 부탁에는 어디 · 무엇 · (    )이(가) 들어갑니다.', c: ['어떻게', '언제', '누가', '왜'], a: 0, e: '예: 재생 버튼(어디) 색(무엇)을 초록으로(어떻게).' },
+  { n: 43, p: 3, t: 'fix', l: 2, q: '"색 바꿔 줘" 를 바르게 고친 부탁은?', c: ['"전부 다시 만들어 줘"', '"아무 색이나 바꿔 줘"', '"색 좀 예쁘게 해 줘"', '"재생 버튼 색을 초록으로 바꿔 줘"'], a: 3, e: '어디(재생 버튼) · 무엇(색) · 어떻게(초록으로)가 모두 들어 있습니다.' },
+  { n: 44, p: 3, t: 'fix', l: 3, q: '"그거 좀 크게 해 줘" 를 바르게 고친 부탁은?', c: ['"그거 진짜 크게 해 줘"', '"곡 제목 글자 크기를 두 배로 키워 줘"', '"다 크게 해 줘"', '"처음부터 다시 만들어 줘"'], a: 1, e: '"그거" 대신 어디를, "크게" 대신 얼마나를 말합니다.' },
+  { n: 45, p: 3, t: 'sit', l: 3, q: 'Claude Code 가 고친 뒤 무엇이 바뀌었는지 확인하려면 어디를 보면 될까?', c: ['토큰 수', '빨강 · 초록으로 보이는 바뀐 줄', '하단 정보줄 ② 칸', '내 GitHub 아이디'], a: 1, e: '빨강 − 는 빠진 줄, 초록 + 는 들어온 줄입니다.' },
+  { n: 46, p: 3, t: 'match', l: 3, q: '평소에 하는 말과, 용어로 바꾼 부탁을 짝 지어 봅니다.', terms: ['이거 남겨 둬', '인터넷에 올려', '다시 가져와', '책상 좀 비워'], c: ['"week-02 를 푸시해 줘"', '"GitHub 의 새 커밋을 풀 해 줘"', '"week-02 를 커밋해 줘"', '/clear 입력하기'], a: [2, 0, 1, 3], e: '용어로 말하면 AI 가 되묻지 않고 한 번에 알아듣습니다.' },
+  { n: 47, p: 3, t: 'ox', l: 1, q: '부탁 끝에 "나머지는 그대로 둬" 를 붙이면 고칠 곳이 아닌 곳은 건드리지 말라는 뜻이 된다.', a: 'O', e: '그 부분만 고치라는 뜻이 더 분명해집니다.' },
+  { n: 48, p: 3, t: 'blank', l: 2, q: '"재생 버튼 색을 초록으로 바꿔 줘" 에서 재생 버튼은 어디 · 무엇 · 어떻게 중 (    )입니다.', c: ['무엇', '어떻게', '언제', '어디'], a: 3, e: '재생 버튼(어디) 색(무엇)을 초록으로(어떻게).' },
+  { n: 49, p: 3, t: 'fix', l: 2, q: '"글자 좀 바꿔 줘" 를 바르게 고친 부탁은?', c: ['"곡 제목을 우주 산책 (라이브) 로 바꿔 줘"', '"아무 글자나 바꿔 줘"', '"처음부터 다시 써 줘"', '"글자 다 바꿔 줘"'], a: 0, e: '어디(곡 제목)와 어떻게(무엇으로 바꿀지)를 함께 말합니다.' },
+  { n: 50, p: 3, t: 'order', l: 3, q: '고친 결과를 친구에게 보여 주기까지 순서대로 놓아 봅니다.', c: ['바뀐 줄 확인하기', '커밋하고 푸시하기', '그 부분만 고쳐 달라고 부탁하기', 'Pages 주소로 열어 보기'], a: 'CABD', e: '부탁하고, 바뀐 줄을 확인한 뒤, 커밋 · 푸시하면 Pages 주소로 새 모습을 봅니다.' },
+];
+
+const PARTS = [
+  { id: 1, name: 'Git · GitHub · Pages', desc: '커밋, 푸시, 클론, Pages 주소' },
+  { id: 2, name: 'AI 를 이해하는 말', desc: 'LLM, 토큰, 컨텍스트, 할루시네이션' },
+  { id: 3, name: '찾아서 고치는 부탁', desc: '어디 · 무엇 · 어떻게, 그 부분만 고치기' },
+];
+const TYPE_NAME = { mc: '4지선다', ox: 'OX', blank: '빈칸', order: '순서', match: '짝 맞히기', sit: '상황', fix: '부탁 고치기' };
+const NUM = ['①', '②', '③', '④'];
+const KOR = ['가', '나', '다', '라'];
+const ABC = ['A', 'B', 'C', 'D'];
+const MAX_HEARTS = 5;
+const METERS_PER_STEP = 10;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+
+function answerText(q) {
+  if (q.t === 'ox') return q.a;
+  if (q.t === 'order') return q.a.split('').join(' → ');
+  if (q.t === 'match') return q.a.map((d, i) => (i + 1) + '-' + KOR[d]).join(' · ');
+  return NUM[q.a] + ' ' + q.c[q.a];
+}
+
+// ===== 달리기 게임 (캔버스) =====
+const Runner = (() => {
+  const cv = $('game');
+  const ctx = cv.getContext('2d');
+  const W = 720, H = 220, GROUND = 176, CX = 130, STEP = 160, SPEED = 300;
+  let s;
+
+  function reset() {
+    s = { x: 0, target: 0, mode: 'idle', phase: 0, t: 0, y: 0, vy: 0, knock: 0, fall: 0,
+          obs: [], bits: [], confetti: [], shake: 0, pending: null, flag: null, dieAfter: false };
+  }
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    cv.width = W * dpr; cv.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function run() {
+    if (s.pending) collide();
+    s.target = Math.max(s.target, s.x) + STEP;
+    s.mode = 'run';
+  }
+  function hit(onHit, fatal) {
+    if (s.pending) collide();
+    const ox = Math.max(s.target, s.x) + CX + 200;
+    const ob = { x: ox, hit: false, a: 1, rot: 0, vx: 0, vy: 0, dy: 0 };
+    s.obs.push(ob);
+    s.target = ox - 18 - 14 - CX;
+    s.pending = { ob, onHit, fatal };
+    s.mode = 'run';
+  }
+  function collide() {
+    const { ob, onHit, fatal } = s.pending;
+    s.pending = null;
+    s.x = s.target;
+    ob.hit = true; ob.vx = 180; ob.vy = -220;
+    for (let i = 0; i < 12; i++) {
+      s.bits.push({ x: ob.x, y: GROUND - 20, vx: (Math.random() - .3) * 260, vy: -Math.random() * 300 - 60, life: 1, c: i % 2 ? '#b8743a' : '#e8434f' });
+    }
+    s.knock = 60; s.vy = -240; s.shake = 12; s.mode = 'knock';
+    s.target = s.x - s.knock;
+    s.dieAfter = !!fatal;
+    if (onHit) onHit();
+  }
+  function win() {
+    if (s.pending) collide();
+    s.dieAfter = false;
+    const fx = Math.max(s.target, s.x) + CX + 240;
+    s.flag = { x: fx };
+    s.target = fx - CX - 30;
+    s.mode = 'run';
+    s.winAfter = true;
+  }
+  function stop() { s.mode = 'idle'; }
+
+  function update(dt) {
+    s.t += dt;
+    if (s.mode === 'run') {
+      s.x = Math.min(s.target, s.x + SPEED * dt);
+      s.phase += dt * 15;
+      if (s.x >= s.target) {
+        if (s.pending) collide();
+        else if (s.winAfter) { s.winAfter = false; s.mode = 'win'; burst(); }
+        else s.mode = 'idle';
+      }
+    } else if (s.mode === 'knock') {
+      s.x = Math.max(s.target, s.x - 260 * dt);
+      s.phase += dt * 6;
+      if (s.x <= s.target && s.y >= 0) s.mode = s.dieAfter ? 'dead' : 'idle';
+    } else if (s.mode === 'dead') {
+      s.fall = Math.min(1, s.fall + dt * 3);
+    } else if (s.mode === 'win') {
+      if (Math.random() < dt * 3) burst();
+    }
+    // 점프 물리
+    if (s.y < 0 || s.vy < 0) {
+      s.vy += 900 * dt; s.y += s.vy * dt;
+      if (s.y >= 0) { s.y = 0; s.vy = 0; }
+    }
+    for (const ob of s.obs) {
+      if (!ob.hit) continue;
+      ob.vy += 900 * dt; ob.dy += ob.vy * dt; ob.x += ob.vx * dt; ob.rot += dt * 8; ob.a -= dt * 1.2;
+    }
+    s.obs = s.obs.filter(o => o.a > 0);
+    for (const b of s.bits) { b.vy += 900 * dt; b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt * 1.4; }
+    s.bits = s.bits.filter(b => b.life > 0);
+    for (const c of s.confetti) { c.vy += 300 * dt; c.x += c.vx * dt; c.y += c.vy * dt; c.r += dt * 6; c.life -= dt * .5; }
+    s.confetti = s.confetti.filter(c => c.life > 0);
+    s.shake = Math.max(0, s.shake - dt * 40);
+  }
+  function burst() {
+    const cols = ['#ff7a2f', '#ffd23f', '#3bb273', '#3f8efc', '#e8434f'];
+    for (let i = 0; i < 40; i++) {
+      s.confetti.push({ x: CX + Math.random() * 300, y: -10, vx: (Math.random() - .5) * 120, vy: Math.random() * 80, r: Math.random() * 6, life: 1, c: cols[i % cols.length] });
+    }
+  }
+
+  function draw() {
+    ctx.save();
+    if (s.shake > 0) ctx.translate((Math.random() - .5) * s.shake, (Math.random() - .5) * s.shake);
+    // 하늘
+    const g = ctx.createLinearGradient(0, 0, 0, GROUND);
+    g.addColorStop(0, '#7cc8f7'); g.addColorStop(1, '#d9f1ff');
+    ctx.fillStyle = g; ctx.fillRect(-20, -20, W + 40, H + 40);
+    ctx.fillStyle = '#ffe27a'; ctx.beginPath(); ctx.arc(640, 44, 22, 0, Math.PI * 2); ctx.fill();
+    // 구름
+    ctx.fillStyle = 'rgba(255,255,255,.9)';
+    for (let i = 0; i < 5; i++) {
+      const span = W + 240;
+      const cx = (((i * 190 - s.x * 0.15) % span) + span) % span - 120;
+      const cy = 30 + (i % 3) * 22;
+      ctx.beginPath(); ctx.arc(cx, cy, 14, 0, 7); ctx.arc(cx + 18, cy - 6, 18, 0, 7); ctx.arc(cx + 38, cy, 13, 0, 7); ctx.fill();
+    }
+    // 언덕
+    hills(0.3, '#a9dc8e', 120, 30, 0.012);
+    hills(0.6, '#86c96b', 145, 20, 0.02);
+    // 땅
+    ctx.fillStyle = '#5fb245'; ctx.fillRect(-20, GROUND, W + 40, 10);
+    ctx.fillStyle = '#c99561'; ctx.fillRect(-20, GROUND + 10, W + 40, H - GROUND);
+    ctx.fillStyle = '#b78250';
+    const off = ((s.x % 40) + 40) % 40;
+    for (let x = -off; x < W + 40; x += 40) ctx.fillRect(x, GROUND + 22, 18, 4);
+    // 거리 표지판 (한 걸음 = 10 m)
+    ctx.font = 'bold 12px system-ui, sans-serif'; ctx.textAlign = 'center';
+    const first = Math.floor((s.x - CX) / STEP) - 1;
+    for (let k = Math.max(0, first); k < first + 8; k++) {
+      const sx = k * STEP + CX + 14 - s.x;
+      if (sx < -30 || sx > W + 30) continue;
+      ctx.fillStyle = '#7a5532'; ctx.fillRect(sx - 2, GROUND - 26, 4, 26);
+      ctx.fillStyle = '#fff8e8'; ctx.fillRect(sx - 18, GROUND - 40, 36, 16);
+      ctx.fillStyle = '#7a5532'; ctx.fillText(k * METERS_PER_STEP + 'm', sx, GROUND - 28);
+    }
+    // 결승 깃발
+    if (s.flag) {
+      const fx = s.flag.x - s.x;
+      ctx.fillStyle = '#555'; ctx.fillRect(fx, GROUND - 90, 4, 90);
+      for (let r = 0; r < 4; r++) for (let c = 0; c < 6; c++) {
+        ctx.fillStyle = (r + c) % 2 ? '#222' : '#fff';
+        ctx.fillRect(fx + 4 + c * 8, GROUND - 90 + r * 8 + Math.sin(s.t * 6 + c) * 1.5, 8, 8);
+      }
+    }
+    // 장애물 (BUG 상자)
+    for (const ob of s.obs) {
+      const ox = ob.x - s.x;
+      ctx.save(); ctx.globalAlpha = Math.max(0, ob.a);
+      ctx.translate(ox, GROUND - 18 + ob.dy); ctx.rotate(ob.rot);
+      ctx.fillStyle = '#b8743a'; ctx.fillRect(-18, -18, 36, 36);
+      ctx.strokeStyle = '#7a4a1f'; ctx.lineWidth = 3; ctx.strokeRect(-18, -18, 36, 36);
+      ctx.beginPath(); ctx.moveTo(-18, -18); ctx.lineTo(18, 18); ctx.moveTo(18, -18); ctx.lineTo(-18, 18); ctx.stroke();
+      ctx.fillStyle = '#e8434f'; ctx.fillRect(-16, -7, 32, 14);
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 11px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('BUG', 0, 1);
+      ctx.restore();
+    }
+    ctx.textBaseline = 'alphabetic';
+    for (const b of s.bits) { ctx.globalAlpha = Math.max(0, b.life); ctx.fillStyle = b.c; ctx.fillRect(b.x - s.x, b.y, 6, 6); }
+    ctx.globalAlpha = 1;
+    drawChar();
+    for (const c of s.confetti) {
+      ctx.save(); ctx.globalAlpha = Math.max(0, c.life); ctx.translate(c.x, c.y); ctx.rotate(c.r);
+      ctx.fillStyle = c.c; ctx.fillRect(-4, -2, 8, 4); ctx.restore();
+    }
+    if (s.mode === 'dead' && s.fall >= 1) caption('GAME OVER', '#e8434f');
+    if (s.mode === 'win') caption('완주!', '#ff7a2f');
+    ctx.restore();
+  }
+  function hills(par, color, base, amp, freq) {
+    ctx.fillStyle = color; ctx.beginPath(); ctx.moveTo(-20, GROUND);
+    for (let x = -20; x <= W + 20; x += 10) ctx.lineTo(x, base - Math.sin((x + s.x * par) * freq) * amp - amp);
+    ctx.lineTo(W + 20, GROUND); ctx.closePath(); ctx.fill();
+  }
+  function caption(text, color) {
+    ctx.font = '36px Jua, system-ui, sans-serif'; ctx.textAlign = 'center';
+    ctx.lineWidth = 6; ctx.strokeStyle = '#fff'; ctx.strokeText(text, W / 2, 96);
+    ctx.fillStyle = color; ctx.fillText(text, W / 2, 96);
+  }
+  function drawChar() {
+    let y = s.y;
+    if (s.mode === 'idle') y += Math.sin(s.t * 3) * 1.5;
+    if (s.mode === 'win') y = -Math.abs(Math.sin(s.t * 7)) * 22;
+    ctx.save();
+    ctx.translate(CX, GROUND + y);
+    // 그림자
+    ctx.fillStyle = 'rgba(0,0,0,.15)';
+    ctx.beginPath(); ctx.ellipse(0, -y + 2, 18, 4, 0, 0, 7); ctx.fill();
+    if (s.mode === 'dead') ctx.rotate(-Math.PI / 2 * s.fall);
+    const moving = s.mode === 'run' || s.mode === 'knock';
+    const sw = moving ? Math.sin(s.phase) * 0.9 : (s.mode === 'win' ? 0.5 : 0.1);
+    ctx.lineCap = 'round';
+    // 다리
+    ctx.strokeStyle = '#2b3a55'; ctx.lineWidth = 7;
+    limb(0, -26, sw, 24); limb(0, -26, -sw, 24);
+    // 몸
+    ctx.fillStyle = '#ff7a2f';
+    roundRect(-11, -52, 22, 30, 8); ctx.fill();
+    // 팔
+    ctx.strokeStyle = '#ffcfa3'; ctx.lineWidth = 6;
+    if (s.mode === 'win') { limb(0, -46, Math.PI - 0.6, 18); limb(0, -46, Math.PI + 0.6, 18); }
+    else { limb(0, -46, -sw * 0.9, 18); limb(0, -46, sw * 0.9, 18); }
+    // 머리
+    ctx.fillStyle = '#ffd7b0';
+    ctx.beginPath(); ctx.arc(2, -64, 13, 0, 7); ctx.fill();
+    ctx.fillStyle = '#3b2a20';
+    ctx.beginPath(); ctx.arc(1, -68, 13, Math.PI * 1.05, Math.PI * 1.95); ctx.fill();
+    // 눈
+    if (s.mode === 'dead' || s.mode === 'knock') {
+      ctx.strokeStyle = '#222'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(6, -66); ctx.lineTo(10, -62); ctx.moveTo(10, -66); ctx.lineTo(6, -62); ctx.stroke();
+    } else {
+      ctx.fillStyle = '#222'; ctx.beginPath(); ctx.arc(8, -64, 2, 0, 7); ctx.fill();
+    }
+    ctx.restore();
+  }
+  function limb(x, y, ang, len) {
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.sin(ang) * len, y + Math.cos(ang) * len); ctx.stroke();
+  }
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
+
+  let last = performance.now();
+  function loop(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    update(dt); draw();
+    requestAnimationFrame(loop);
+  }
+  reset(); resize();
+  window.addEventListener('resize', resize);
+  requestAnimationFrame(loop);
+  return { reset, run, hit, win, stop };
+})();
+
+// ===== 퀴즈 진행 =====
+const state = { part: null, list: [], idx: 0, correct: 0, hearts: MAX_HEARTS, answered: false, misses: [] };
+
+function renderParts() {
+  const box = $('parts');
+  const html = PARTS.map(p => {
+    const count = QUESTIONS.filter(q => q.p === p.id).length;
+    return `<button class="part" data-part="${p.id}"><span class="tag">Part ${p.id}</span><span class="name">${esc(p.name)}</span><span class="desc">${count}문제 · ${esc(p.desc)}</span></button>`;
+  }).join('') + `<button class="part all" data-part="0"><span class="tag">전체 도전</span><span class="name">Part 1 ~ 3 모두</span><span class="desc">${QUESTIONS.length}문제 · 끝까지 하트를 지킬 수 있을까?</span></button>`;
+  box.innerHTML = html;
+  box.querySelectorAll('.part').forEach(b => b.addEventListener('click', () => startPart(Number(b.dataset.part))));
+}
+
+function show(id) {
+  ['start', 'quiz', 'result'].forEach(s => { $(s).hidden = s !== id; });
+}
+
+function startPart(part) {
+  state.part = part;
+  state.list = QUESTIONS.filter(q => part === 0 || q.p === part);
+  state.idx = 0; state.correct = 0; state.hearts = MAX_HEARTS; state.misses = [];
+  Runner.reset();
+  renderHearts(); updateHud();
+  show('quiz');
+  renderQuestion();
+}
+
+function renderHearts(popIndex) {
+  $('hearts').innerHTML = Array.from({ length: MAX_HEARTS }, (_, i) =>
+    `<span class="${i >= state.hearts ? 'lost' : ''}${i === popIndex ? ' pop' : ''}">♥</span>`).join('');
+}
+function updateHud() {
+  const total = state.list.length || 0;
+  const done = state.answered ? state.idx + 1 : state.idx;
+  $('prog').textContent = `${Math.min(done, total)} / ${total}`;
+  $('bar').style.width = total ? (done / total * 100) + '%' : '0';
+  $('dist').textContent = state.correct * METERS_PER_STEP + ' m';
+}
+
+function renderQuestion() {
+  const q = state.list[state.idx];
+  state.answered = false;
+  $('qType').textContent = TYPE_NAME[q.t];
+  $('qNum').textContent = `Q${q.n} · Part ${q.p} · ${state.idx + 1}번째 문제`;
+  $('qLv').textContent = '★'.repeat(q.l) + ['', ' 쉬움', ' 보통', ' 어려움'][q.l];
+  let text = esc(q.q);
+  if (q.t === 'blank') text = text.replace(/\(\s+\)/, '<span class="blank" id="blank">?</span>');
+  $('qText').innerHTML = text;
+  $('feedback').hidden = true;
+  $('nextBtn').hidden = true;
+  const box = $('answer');
+  box.innerHTML = '';
+  if (q.t === 'ox') buildOX(q, box);
+  else if (q.t === 'order') buildOrder(q, box);
+  else if (q.t === 'match') buildMatch(q, box);
+  else buildChoice(q, box);
+  updateHud();
+  $('quiz').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+function buildChoice(q, box) {
+  box.innerHTML = `<div class="opts">${q.c.map((c, i) =>
+    `<button class="opt" data-i="${i}"><span class="n">${NUM[i]}</span><span>${esc(c)}</span></button>`).join('')}</div>`;
+  const btns = [...box.querySelectorAll('.opt')];
+  btns.forEach(b => b.addEventListener('click', () => {
+    if (state.answered) return;
+    const pick = Number(b.dataset.i);
+    const ok = pick === q.a;
+    btns.forEach(x => { x.disabled = true; });
+    btns[q.a].classList.add('ok');
+    b.classList.add(ok ? 'mine' : 'bad');
+    if (q.t === 'blank') { const bl = $('blank'); bl.textContent = q.c[q.a]; bl.classList.add('filled'); }
+    finish(q, ok);
+  }));
+}
+
+function buildOX(q, box) {
+  box.innerHTML = `<div class="opts ox"><button class="opt" data-v="O">O</button><button class="opt" data-v="X">X</button></div>`;
+  const btns = [...box.querySelectorAll('.opt')];
+  btns.forEach(b => b.addEventListener('click', () => {
+    if (state.answered) return;
+    const ok = b.dataset.v === q.a;
+    btns.forEach(x => { x.disabled = true; if (x.dataset.v === q.a) x.classList.add('ok'); });
+    b.classList.add(ok ? 'mine' : 'bad');
+    finish(q, ok);
+  }));
+}
+
+function buildOrder(q, box) {
+  const seq = [];
+  box.innerHTML = `
+    <div class="sub-label">보기를 일어나는 순서대로 눌러 칸에 놓아요 (놓은 칸을 누르면 빠져요)</div>
+    <div class="slots" id="slots"></div>
+    <div class="opts" id="pool">${q.c.map((c, i) =>
+      `<button class="opt" data-k="${ABC[i]}"><span class="n">${ABC[i]}</span><span>${esc(c)}</span></button>`).join('')}</div>
+    <div class="row" style="margin-top:12px"><button class="ghost" id="ordReset">다시 놓기</button><button class="primary" id="ordSubmit" disabled>제출</button></div>`;
+  const pool = [...box.querySelectorAll('#pool .opt')];
+  const slots = $('slots');
+  function paint(result) {
+    slots.innerHTML = [0, 1, 2, 3].map(i => {
+      const k = seq[i];
+      let cls = k ? 'slot filled' : 'slot';
+      if (result) cls += k === q.a[i] ? ' ok' : ' bad';
+      return `<button class="${cls}" data-i="${i}" ${result ? 'disabled' : ''}><small>${i + 1}번째</small>${k ? `<b>${k}</b>${esc(q.c[ABC.indexOf(k)])}` : ''}</button>`;
+    }).join('');
+    slots.querySelectorAll('.slot').forEach(sl => sl.addEventListener('click', () => {
+      if (state.answered) return;
+      const i = Number(sl.dataset.i);
+      if (seq[i]) { seq.splice(i, 1); paint(); }
+    }));
+    pool.forEach(b => { const used = seq.includes(b.dataset.k); b.classList.toggle('used', used); b.disabled = used || !!result; });
+    $('ordSubmit').disabled = seq.length !== 4 || !!result;
+  }
+  pool.forEach(b => b.addEventListener('click', () => {
+    if (state.answered || seq.length >= 4 || seq.includes(b.dataset.k)) return;
+    seq.push(b.dataset.k); paint();
+  }));
+  $('ordReset').addEventListener('click', () => { if (!state.answered) { seq.length = 0; paint(); } });
+  $('ordSubmit').addEventListener('click', () => {
+    if (state.answered || seq.length !== 4) return;
+    const ok = seq.join('') === q.a;
+    $('ordReset').disabled = true;
+    paint(true);
+    if (ok) slots.querySelectorAll('.slot').forEach(sl => sl.classList.add('mine'));
+    finish(q, ok);
+  });
+  paint();
+}
+
+function buildMatch(q, box) {
+  const sel = [null, null, null, null];
+  box.innerHTML = `
+    <div class="descs">${q.c.map((d, i) => `<div class="desc"><b>${KOR[i]}</b>${esc(d)}</div>`).join('')}</div>
+    <div class="sub-label">1~4 마다 알맞은 설명(가~라)을 하나씩 골라요</div>
+    <div id="trows">${q.terms.map((t, i) => `
+      <div class="trow"><span class="term"><b>${i + 1}</b>${esc(t)}</span>
+        <div class="picks">${KOR.map((k, j) => `<button class="pick" data-i="${i}" data-j="${j}">${k}</button>`).join('')}</div>
+      </div>`).join('')}</div>
+    <div class="row" style="margin-top:12px"><button class="primary" id="matSubmit" disabled>제출</button></div>`;
+  const picks = [...box.querySelectorAll('.pick')];
+  function paint() {
+    picks.forEach(p => p.classList.toggle('on', sel[p.dataset.i] === Number(p.dataset.j)));
+    $('matSubmit').disabled = sel.includes(null);
+  }
+  picks.forEach(p => p.addEventListener('click', () => {
+    if (state.answered) return;
+    const i = Number(p.dataset.i), j = Number(p.dataset.j);
+    sel.forEach((v, k) => { if (v === j && k !== i) sel[k] = null; }); // 설명 하나는 한 용어에만
+    sel[i] = sel[i] === j ? null : j;
+    paint();
+  }));
+  $('matSubmit').addEventListener('click', () => {
+    if (state.answered || sel.includes(null)) return;
+    const ok = sel.every((v, i) => v === q.a[i]);
+    picks.forEach(p => {
+      const i = Number(p.dataset.i), j = Number(p.dataset.j);
+      p.disabled = true; p.classList.remove('on');
+      if (sel[i] === j) p.classList.add(j === q.a[i] ? 'ok' : 'bad');
+      else if (j === q.a[i]) p.classList.add('should');
+    });
+    $('matSubmit').disabled = true;
+    finish(q, ok);
+  });
+}
+
+function finish(q, ok) {
+  state.answered = true;
+  if (ok) {
+    state.correct++;
+    Runner.run();
+  } else {
+    state.hearts--;
+    state.misses.push(q);
+    const lostIndex = state.hearts;
+    Runner.hit(() => renderHearts(lostIndex), state.hearts <= 0);
+  }
+  const fb = $('feedback');
+  fb.className = 'feedback ' + (ok ? 'ok' : 'bad');
+  const head = ok ? '정답! 앞으로 10 m 달려요' : (state.hearts <= 0 ? '쿵! 마지막 하트가 사라졌어요' : '아쉬워요! 장애물에 쿵, 하트 −1');
+  fb.innerHTML = `<div class="head">${head}</div><p><b>정답:</b> ${esc(answerText(q))}</p><p><b>해설:</b> ${esc(q.e)}</p>`;
+  fb.hidden = false;
+  const last = state.idx >= state.list.length - 1 || state.hearts <= 0;
+  const nb = $('nextBtn');
+  nb.textContent = last ? '결과 보기 →' : '다음 문제 →';
+  nb.hidden = false;
+  nb.focus({ preventScroll: true });
+  updateHud();
+}
+
+$('nextBtn').addEventListener('click', () => {
+  if (!state.answered) return;
+  if (state.hearts <= 0) { showResult(false); return; }
+  if (state.idx >= state.list.length - 1) { Runner.win(); showResult(true); return; }
+  state.idx++;
+  renderQuestion();
+});
+
+function showResult(cleared) {
+  const total = state.list.length;
+  const solved = state.idx + 1;
+  $('rTitle').textContent = cleared ? '완주했어요!' : '게임 오버';
+  $('rScore').innerHTML = `${state.correct} <small>/ ${total} 점</small>`;
+  const stats = [
+    `맞힌 문제 ${state.correct}`,
+    `틀린 문제 ${state.misses.length}`,
+    `남은 하트 ${state.hearts}`,
+    `달린 거리 ${state.correct * METERS_PER_STEP} m`,
+  ];
+  if (!cleared && solved < total) stats.push(`못 푼 문제 ${total - solved}`);
+  $('rStats').innerHTML = stats.map(s => `<li>${s}</li>`).join('');
+  $('rMiss').innerHTML = state.misses.length ? `<h3>틀린 문제 다시 보기</h3>` + state.misses.map(q =>
+    `<div class="miss"><b>Q${q.n}</b> ${esc(q.q)}<br><span class="ans">정답: ${esc(answerText(q))}</span><br>${esc(q.e)}</div>`).join('') : '';
+  show('result');
+  $('result').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+$('retryBtn').addEventListener('click', () => startPart(state.part));
+$('homeBtn').addEventListener('click', () => {
+  Runner.reset(); state.list = []; state.answered = false; state.hearts = MAX_HEARTS; state.correct = 0;
+  renderHearts(); updateHud(); show('start');
+});
+
+// 키보드: 1~4 로 보기 고르기, O / X 키
+document.addEventListener('keydown', e => {
+  if ($('quiz').hidden || state.answered || e.ctrlKey || e.metaKey || e.altKey) return;
+  const q = state.list[state.idx];
+  if (!q) return;
+  if (q.t === 'ox') {
+    const k = e.key.toUpperCase();
+    if (k === 'O' || k === 'X') $('answer').querySelector(`[data-v="${k}"]`).click();
+  } else if (['mc', 'blank', 'sit', 'fix'].includes(q.t) && /^[1-4]$/.test(e.key)) {
+    $('answer').querySelectorAll('.opt')[Number(e.key) - 1].click();
+  }
+});
+
+renderParts();
+renderHearts();
+updateHud();
+</script>
+</body>
+</html>
