@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>반응 속도 테스트</title>
+<style>
+  :root {
+    --bg: #111418;
+    --panel: #1b2027;
+    --line: #2e3540;
+    --text: #eef1f5;
+    --muted: #9aa5b4;
+    --accent: #ffd166;
+    --wait: #d64545;
+    --go: #2fbf71;
+    --fail: #f08a24;
+    --idle: #3a6ff0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+    display: flex;
+    justify-content: center;
+    padding: 16px;
+  }
+  .wrap { width: 100%; max-width: 720px; }
+  h1 { font-size: 24px; margin: 4px 0 12px; }
+  .howto {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 10px 16px;
+    margin-bottom: 12px;
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--muted);
+  }
+  .howto ol { margin: 0; padding-left: 20px; }
+  .howto b { color: var(--accent); }
+  .howto kbd {
+    background: #2a313b;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 0 6px;
+    font-family: inherit;
+    color: var(--text);
+  }
+  #stage {
+    height: 320px;
+    border-radius: 14px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 16px;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+    transition: background-color 0.08s;
+    background: var(--idle);
+    color: #fff;
+  }
+  #stage.waiting { background: var(--wait); }
+  #stage.go { background: var(--go); }
+  #stage.fail { background: var(--fail); }
+  #big { font-size: 40px; font-weight: bold; }
+  #small { font-size: 16px; margin-top: 10px; opacity: 0.9; }
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-top: 12px;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 10px;
+    text-align: center;
+  }
+  .card .label { font-size: 13px; color: var(--muted); }
+  .card .value { font-size: 22px; font-weight: bold; margin-top: 4px; }
+  .card .value.best { color: var(--accent); }
+  .rounds {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .round {
+    flex: 1;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px 4px;
+    text-align: center;
+    font-size: 14px;
+    color: var(--muted);
+  }
+  .round.done { color: var(--text); border-color: var(--go); }
+  .round.now { border-color: var(--accent); }
+  .bottom { margin-top: 12px; text-align: right; }
+  button {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  button:hover { color: var(--text); }
+  @media (max-width: 480px) {
+    #stage { height: 260px; }
+    #big { font-size: 30px; }
+    .card .value { font-size: 18px; }
+    .round { font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>⚡ 반응 속도 테스트</h1>
+
+  <div class="howto">
+    <ol>
+      <li>파란 화면을 클릭(또는 <kbd>스페이스</kbd>)하면 시작해요.</li>
+      <li>화면이 <b>빨간색</b>이면 기다리세요. <b>초록색</b>으로 바뀌는 순간 최대한 빨리 클릭!</li>
+      <li>빨간색일 때 누르면 <b>실패</b> — 그 판은 다시 해요.</li>
+      <li>5번 성공하면 평균이 나오고, 가장 좋은 기록은 자동 저장돼요.</li>
+    </ol>
+  </div>
+
+  <div id="stage">
+    <div id="big">클릭해서 시작</div>
+    <div id="small">5번 측정해서 평균을 내요</div>
+  </div>
+
+  <div class="rounds" id="rounds"></div>
+
+  <div class="stats">
+    <div class="card"><div class="label">이번 평균</div><div class="value" id="avg">-</div></div>
+    <div class="card"><div class="label">최고 평균 (저장)</div><div class="value best" id="bestAvg">-</div></div>
+    <div class="card"><div class="label">최고 한 번 (저장)</div><div class="value best" id="bestOne">-</div></div>
+  </div>
+
+  <div class="bottom"><button id="reset">최고 기록 지우기</button></div>
+</div>
+
+<script>
+  const TOTAL = 5;
+  const stage = document.getElementById('stage');
+  const big = document.getElementById('big');
+  const small = document.getElementById('small');
+  const roundsEl = document.getElementById('rounds');
+
+  // state: idle(시작 전) / waiting(빨강) / go(초록) / between(한 판 끝) / fail(너무 빨리) / done(5판 끝)
+  let state = 'idle';
+  let times = [];
+  let timer = null;
+  let goAt = 0;
+
+  function load(key) {
+    try { const v = localStorage.getItem(key); return v ? Number(v) : null; } catch (e) { return null; }
+  }
+  function save(key, v) {
+    try { localStorage.setItem(key, String(v)); } catch (e) {}
+  }
+  let bestAvg = load('reaction-best-avg');
+  let bestOne = load('reaction-best-one');
+
+  function ms(v) { return v == null ? '-' : Math.round(v) + 'ms'; }
+
+  function render() {
+    roundsEl.innerHTML = '';
+    for (let i = 0; i < TOTAL; i++) {
+      const d = document.createElement('div');
+      d.className = 'round';
+      if (i < times.length) { d.classList.add('done'); d.textContent = ms(times[i]); }
+      else {
+        d.textContent = (i + 1) + '번';
+        if (i === times.length && state !== 'idle' && state !== 'done') d.classList.add('now');
+      }
+      roundsEl.appendChild(d);
+    }
+    const avg = times.length ? times.reduce((a, b) => a + b, 0) / times.length : null;
+    document.getElementById('avg').textContent = ms(avg);
+    document.getElementById('bestAvg').textContent = ms(bestAvg);
+    document.getElementById('bestOne').textContent = ms(bestOne);
+  }
+
+  function show(cls, title, sub) {
+    stage.className = cls;
+    big.textContent = title;
+    small.textContent = sub;
+  }
+
+  function startRound() {
+    state = 'waiting';
+    show('waiting', '기다리세요...', '초록색이 되면 클릭!');
+    const delay = 1500 + Math.random() * 2500; // 1.5 ~ 4초
+    timer = setTimeout(() => {
+      state = 'go';
+      goAt = performance.now();
+      show('go', '지금 클릭!', '');
+    }, delay);
+    render();
+  }
+
+  function press() {
+    if (state === 'idle' || state === 'done') {
+      times = [];
+      startRound();
+    } else if (state === 'waiting') {
+      clearTimeout(timer);
+      state = 'fail';
+      show('fail', '너무 빨라요! 실패', '클릭해서 이번 판을 다시 해요');
+      render();
+    } else if (state === 'go') {
+      const t = performance.now() - goAt;
+      times.push(t);
+      if (bestOne == null || t < bestOne) { bestOne = t; save('reaction-best-one', t); }
+      if (times.length < TOTAL) {
+        state = 'between';
+        show('', ms(t), `${times.length} / ${TOTAL} — 클릭해서 다음 판`);
+      } else {
+        const avg = times.reduce((a, b) => a + b, 0) / TOTAL;
+        let msg = '클릭해서 다시 도전';
+        if (bestAvg == null || avg < bestAvg) {
+          bestAvg = avg; save('reaction-best-avg', avg);
+          msg = '🎉 최고 평균 기록! 클릭해서 다시 도전';
+        }
+        state = 'done';
+        show('', '평균 ' + ms(avg), msg);
+      }
+      render();
+    } else if (state === 'between' || state === 'fail') {
+      startRound();
+    }
+  }
+
+  stage.addEventListener('pointerdown', e => { e.preventDefault(); press(); });
+  document.addEventListener('keydown', e => {
+    if ((e.code === 'Space' || e.code === 'Enter') && !e.repeat) { e.preventDefault(); press(); }
+  });
+
+  document.getElementById('reset').addEventListener('click', () => {
+    if (!confirm('저장된 최고 기록을 지울까요?')) return;
+    bestAvg = null; bestOne = null;
+    try { localStorage.removeItem('reaction-best-avg'); localStorage.removeItem('reaction-best-one'); } catch (e) {}
+    render();
+  });
+
+  render();
+</script>
+</body>
+</html>
