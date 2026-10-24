@@ -1,7 +1,7 @@
 # 화면 오른쪽 아래 구석에 햄스터 펫을 띄운다.
 # 키를 누를 때마다 ②, ③ 을 번갈아 보여 주고, 잠깐 멈추면 ① 로 돌아간다.
 # 10초 동안 안 누르면 ④ 로 졸고, 펫 아래에 누른 횟수를 보여 준다. (끄면 0, 파일에 안 남김)
-# 오른쪽 클릭 → "끄기" 로 끈다.
+# 왼쪽 버튼으로 잡고 끌면 옮겨진다. 오른쪽 클릭 → "끄기" 로 끈다.
 import sys
 from pathlib import Path
 
@@ -87,6 +87,11 @@ class Pet(QWidget):
         # 작업 표시줄을 뺀 화면 영역의 오른쪽 아래
         area = self.screen().availableGeometry()
         self.move(area.right() - self.width() - MARGIN, area.bottom() - self.height() - MARGIN)
+
+    def mousePressEvent(self, event):
+        # 왼쪽 버튼으로 잡으면 창 옮기기는 Windows 에 맡긴다
+        if event.button() == Qt.LeftButton:
+            self.windowHandle().startSystemMove()
 
     def contextMenuEvent(self, event):
         menu = QMenu(self)
