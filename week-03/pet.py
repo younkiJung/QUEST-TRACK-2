@@ -11,7 +11,7 @@ from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QApplication, QLabel, QMenu, QVBoxLayout, QWidget
 
 ART = Path(__file__).parent / "art"
-SIZE = 150         # 펫 크기 (픽셀)
+SIZE = 300         # 펫 크기 (픽셀)
 MARGIN = 8         # 화면 가장자리와의 거리
 REST_MS = 300      # 이만큼 안 누르면 ① 로 돌아감 (밀리초)
 SLEEP_MS = 10_000  # 이만큼 안 누르면 ④ 로 졺 (밀리초)
