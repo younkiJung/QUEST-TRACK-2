@@ -51,6 +51,9 @@ const images = {
   bat2: loadImage('bat-2.png'),
   heartFull: loadImage('heart-full.png'),
   heartEmpty: loadImage('heart-empty.png'),
+  dashEmpty: loadImage('dash-bar-empty.png'),
+  dashFull: loadImage('dash-bar-full.png'),
+  targetArrow: loadImage('target-arrow.png'),
 };
 const sounds = {
   jump: loadSound('jump.wav', 0.5),
@@ -555,27 +558,15 @@ function drawEnemy(e, now) {
         ctx.restore();
       }
     } else {
-      // 공격 예고: 노릴 곳까지 점선, 머리 위 느낌표, 몸 떨림
+      // 공격 예고: 노릴 곳 위에 화살표, 날개를 활짝 펴고 몸 떨림
       let jx = 0;
+      let frame = Math.floor(e.anim * (e.state === 'dive' ? 16 : 8)) % 2 ? images.bat2 : images.bat1;
       if (e.state === 'warn') {
         jx = Math.sin(now / 20) * 3;
-        ctx.save();
-        ctx.setLineDash([10, 8]);
-        ctx.lineWidth = 3;
-        ctx.strokeStyle = 'rgba(255, 70, 70, 0.8)';
-        ctx.beginPath();
-        ctx.moveTo(cx, cy);
-        ctx.lineTo(e.targetX, e.targetY);
-        ctx.stroke();
-        ctx.restore();
-        ctx.strokeStyle = 'rgba(255, 70, 70, 0.9)';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.arc(e.targetX, e.targetY, 18 + Math.sin(now / 60) * 4, 0, Math.PI * 2);
-        ctx.stroke();
-        label('!', cx, cy - 40, 36, 'center', '#ff4d4d');
+        frame = images.bat2;
+        const bob = Math.abs(Math.sin(now / 120)) * 10;
+        ctx.drawImage(images.targetArrow, e.targetX - 18, e.targetY - 60 - bob, 12 * SCALE, 16 * SCALE);
       }
-      const frame = Math.floor(e.anim * (e.state === 'dive' ? 16 : 8)) % 2 ? images.bat2 : images.bat1;
       ctx.drawImage(frame, cx - 36 + jx, cy - 36, 72, 72);
     }
   }
@@ -588,13 +579,11 @@ function drawHud() {
     ctx.drawImage(i < p.hp ? images.heartFull : images.heartEmpty, 16 + i * 42, 12, 36, 36);
   }
 
-  // 대시 게이지
+  // 대시 게이지: 흰 막대 위에 파란 막대를 찬 만큼만 그림
   const ready = 1 - p.dashCool / DASH_COOLDOWN;
-  ctx.fillStyle = '#1d2433';
-  ctx.fillRect(20, 54, 120, 12);
-  ctx.fillStyle = ready >= 1 ? '#66e0ff' : '#5a6b8c';
-  ctx.fillRect(22, 56, 116 * ready, 8);
-  label('대시', 148, 66, 16);
+  ctx.drawImage(images.dashEmpty, 18, 52, 26 * SCALE, 12 * SCALE);
+  if (ready > 0) ctx.drawImage(images.dashFull, 0, 0, 26 * ready, 12, 18, 52, 26 * SCALE * ready, 12 * SCALE);
+  label('대시', 104, 78, 18);
 
   const got = strawberries.filter(s => s.got).length;
   const bump = 1 + hudBump * 0.35;
@@ -624,7 +613,7 @@ function drawScreens() {
       '스페이스  점프 · 공중에서 한 번 더',
       'Shift  대시 (대시하는 동안은 안 맞아요)',
       '적의 머리를 밟으면 물리칠 수 있어요',
-      '박쥐가 !  를 띄우면 빨간 원으로 덤벼요',
+      '박쥐가 날개를 펴고 떨면 화살표 쪽으로 덤벼요',
     ];
     lines.forEach((t, i) => label(t, cx, 250 + i * 38, 22, 'center', '#e6ecf5'));
     if (best !== null) label(`최고 기록 ${best.toFixed(1)}초`, cx, 460, 22, 'center', '#ffe066');
