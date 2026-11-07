@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>딸기 모으기</title>
+<style>
+  body { margin: 0; background: #1d2433; color: #fff; font-family: sans-serif; text-align: center; }
+  canvas { display: block; margin: 16px auto 8px; image-rendering: pixelated; max-width: 100%; border-radius: 6px; }
+  p { margin: 4px; opacity: 0.8; }
+</style>
+</head>
+<body>
+<canvas id="game" width="960" height="540"></canvas>
+<p>← → 움직이기 · 스페이스 점프 · R 다시 하기</p>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+
+const SCALE = 3;          // 픽셀 그림을 3배로 키워서 그림
+const TILE = 18 * SCALE;  // 땅 한 칸 크기
+
+// ---- 에셋 불러오기 (모두 assets 폴더) ----
+function loadImage(name) {
+  const img = new Image();
+  img.src = 'assets/' + name;
+  return img;
+}
+function loadSound(name, volume) {
+  const audio = new Audio('assets/' + name);
+  audio.volume = volume;
+  return audio;
+}
+function play(sound) {
+  sound.currentTime = 0;
+  sound.play().catch(() => {});
+}
+
+const images = {
+  stand: loadImage('player-stand.png'),
+  walk: loadImage('player-walk.png'),
+  groundTop: loadImage('ground-top.png'),
+  groundDirt: loadImage('ground-dirt.png'),
+  strawberry: loadImage('strawberry.png'),
+};
+const sounds = {
+  jump: loadSound('jump.wav', 0.5),
+  collect: loadSound('collect.wav', 0.6),
+  clear: loadSound('clear.wav', 0.6),
+};
+
+// ---- 땅과 발판 (칸 단위: x, y, 길이) ----
+const COLS = canvas.width / TILE;   // 17.7칸
+const groundRow = 8;                // 맨 아래 땅이 시작하는 줄
+const platforms = [
+  { x: 0, y: groundRow, w: Math.ceil(COLS), h: 2 },  // 바닥
+  { x: 2, y: 6, w: 3, h: 1 },
+  { x: 7, y: 5, w: 3, h: 1 },
+  { x: 12, y: 6, w: 3, h: 1 },
+  { x: 4, y: 3, w: 2, h: 1 },
+  { x: 11, y: 3, w: 2, h: 1 },
+];
+
+// 딸기 자리 (칸 단위)
+const strawberrySpots = [
+  [3, 7], [6, 7], [10, 7], [16, 7],
+  [3, 5], [8, 4], [13, 5],
+  [4.5, 2], [11.5, 2],
+];
+
+let player, strawberries, startTime, clearTime;
+
+function reset() {
+  player = { x: 60, y: groundRow * TILE - 72, vx: 0, vy: 0, w: 42, h: 54, onGround: false, facing: 1, walkTimer: 0 };
+  strawberries = strawberrySpots.map(([cx, cy]) => ({ x: cx * TILE + TILE / 2, y: cy * TILE + TILE / 2, got: false }));
+  startTime = performance.now();
+  clearTime = null;
+}
+reset();
+
+// ---- 키보드 ----
+const keys = {};
+addEventListener('keydown', e => {
+  if (['ArrowLeft', 'ArrowRight', 'Space', 'ArrowUp'].includes(e.code)) e.preventDefault();
+  if (e.code === 'Space' && !e.repeat && player.onGround) {
+    player.vy = -820;
+    player.onGround = false;
+    play(sounds.jump);
+  }
+  if (e.code === 'KeyR') reset();
+  keys[e.code] = true;
+});
+addEventListener('keyup', e => { keys[e.code] = false; });
+
+// ---- 움직임 ----
+const SPEED = 300, GRAVITY = 2200;
+
+function solidRects() {
+  return platforms.map(p => ({ x: p.x * TILE, y: p.y * TILE, w: p.w * TILE, h: p.h * TILE }));
+}
+function hit(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+function update(dt) {
+  const p = player;
+  p.vx = 0;
+  if (keys.ArrowLeft) { p.vx = -SPEED; p.facing = -1; }
+  if (keys.ArrowRight) { p.vx = SPEED; p.facing = 1; }
+  p.vy += GRAVITY * dt;
+
+  const rects = solidRects();
+
+  // 옆으로 움직이고 벽에 막히기
+  p.x += p.vx * dt;
+  p.x = Math.max(0, Math.min(canvas.width - p.w, p.x));
+  for (const r of rects) {
+    if (hit(p, r)) p.x = p.vx > 0 ? r.x - p.w : r.x + r.w;
+  }
+
+  // 위아래로 움직이고 땅에 서기
+  p.y += p.vy * dt;
+  p.onGround = false;
+  for (const r of rects) {
+    if (hit(p, r)) {
+      if (p.vy > 0) { p.y = r.y - p.h; p.onGround = true; }
+      else { p.y = r.y + r.h; }
+      p.vy = 0;
+    }
+  }
+
+  p.walkTimer = p.vx !== 0 && p.onGround ? p.walkTimer + dt : 0;
+
+  // 딸기 먹기
+  for (const s of strawberries) {
+    if (!s.got && hit(p, { x: s.x - 24, y: s.y - 27, w: 48, h: 54 })) {
+      s.got = true;
+      play(sounds.collect);
+    }
+  }
+  if (clearTime === null && strawberries.every(s => s.got)) {
+    clearTime = (performance.now() - startTime) / 1000;
+    play(sounds.clear);
+  }
+}
+
+// ---- 그리기 ----
+function draw(now) {
+  ctx.fillStyle = '#9fd8ff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  for (const pl of platforms) {
+    for (let i = 0; i < pl.w; i++) {
+      for (let j = 0; j < pl.h; j++) {
+        const img = j === 0 ? images.groundTop : images.groundDirt;
+        ctx.drawImage(img, (pl.x + i) * TILE, (pl.y + j) * TILE, TILE, TILE);
+      }
+    }
+  }
+
+  for (const s of strawberries) {
+    if (s.got) continue;
+    const bob = Math.sin(now / 250 + s.x) * 4;
+    ctx.drawImage(images.strawberry, s.x - 27, s.y - 30 + bob, 18 * SCALE, 20 * SCALE);
+  }
+
+  // 플레이어: 걸을 때 두 그림을 번갈아 보여 줌
+  const p = player;
+  const frame = Math.floor(p.walkTimer * 8) % 2 === 1 ? images.walk : images.stand;
+  const size = 24 * SCALE;
+  ctx.save();
+  ctx.translate(p.x + p.w / 2, p.y + p.h - size + 9);
+  ctx.scale(p.facing, 1);
+  ctx.drawImage(frame, -size / 2, 0, size, size);
+  ctx.restore();
+
+  // 점수와 시간
+  const got = strawberries.filter(s => s.got).length;
+  const time = clearTime ?? (now - startTime) / 1000;
+  ctx.fillStyle = '#1d2433';
+  ctx.font = 'bold 28px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(`🍓 ${got} / ${strawberries.length}`, 20, 44);
+  ctx.textAlign = 'right';
+  ctx.fillText(`${time.toFixed(1)}초`, canvas.width - 20, 44);
+
+  if (clearTime !== null) {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 56px sans-serif';
+    ctx.fillText('다 모았어!', canvas.width / 2, canvas.height / 2 - 10);
+    ctx.font = '28px sans-serif';
+    ctx.fillText(`${clearTime.toFixed(1)}초 걸렸어요 · R 을 누르면 다시`, canvas.width / 2, canvas.height / 2 + 40);
+  }
+}
+
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min((now - last) / 1000, 1 / 30);
+  last = now;
+  if (clearTime === null) update(dt);
+  draw(now);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
