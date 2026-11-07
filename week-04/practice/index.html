@@ -72,7 +72,7 @@ const strawberrySpots = [
 let player, strawberries, startTime, clearTime;
 
 function reset() {
-  player = { x: 60, y: groundRow * TILE - 72, vx: 0, vy: 0, w: 42, h: 54, onGround: false, facing: 1, walkTimer: 0 };
+  player = { x: 60, y: groundRow * TILE - 72, vx: 0, vy: 0, w: 42, h: 54, onGround: false, jumpsLeft: 2, facing: 1, walkTimer: 0 };
   strawberries = strawberrySpots.map(([cx, cy]) => ({ x: cx * TILE + TILE / 2, y: cy * TILE + TILE / 2, got: false }));
   startTime = performance.now();
   clearTime = null;
@@ -83,9 +83,11 @@ reset();
 const keys = {};
 addEventListener('keydown', e => {
   if (['ArrowLeft', 'ArrowRight', 'Space', 'ArrowUp'].includes(e.code)) e.preventDefault();
-  if (e.code === 'Space' && !e.repeat && player.onGround) {
-    player.vy = -820;
+  // 땅에서 한 번, 공중에서 한 번 더 (2단 점프)
+  if (e.code === 'Space' && !e.repeat && player.jumpsLeft > 0) {
+    player.vy = player.onGround ? -820 : -720;
     player.onGround = false;
+    player.jumpsLeft--;
     play(sounds.jump);
   }
   if (e.code === 'KeyR') reset();
@@ -124,7 +126,7 @@ function update(dt) {
   p.onGround = false;
   for (const r of rects) {
     if (hit(p, r)) {
-      if (p.vy > 0) { p.y = r.y - p.h; p.onGround = true; }
+      if (p.vy > 0) { p.y = r.y - p.h; p.onGround = true; p.jumpsLeft = 2; }
       else { p.y = r.y + r.h; }
       p.vy = 0;
     }
