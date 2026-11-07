@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>에셋 확인</title>
+<style>
+  body { margin: 0; padding: 24px; background: #1d2433; color: #fff; font-family: sans-serif; }
+  h1 { margin-top: 0; }
+  table { border-collapse: collapse; }
+  td { padding: 6px 12px; border-bottom: 1px solid #3a4560; vertical-align: middle; }
+  img { image-rendering: pixelated; width: 48px; height: auto; background: #9fd8ff; }
+  button { font-size: 14px; }
+  .ok { color: #7ee08a; }
+  .bad { color: #ff7b7b; font-weight: bold; }
+  #summary { font-size: 20px; margin: 16px 0; }
+</style>
+</head>
+<body>
+<h1>에셋 확인</h1>
+<p>게임(../index.html)이 쓰는 그림과 소리가 assets 폴더에 있는지 하나씩 불러 봐요. 소리는 ▶ 를 눌러 직접 들어 보세요.</p>
+<div id="summary">확인하는 중…</div>
+<table id="list"></table>
+
+<script>
+// 게임에서 assets 파일을 더하거나 바꾸면 여기에도 적어 주세요.
+const files = [
+  'player-stand.png',
+  'player-walk.png',
+  'ground-top.png',
+  'ground-dirt.png',
+  'strawberry.png',
+  'jump.wav',
+  'collect.wav',
+  'clear.wav',
+];
+
+const table = document.getElementById('list');
+let done = 0, bad = 0;
+
+function finish(cell, ok, note) {
+  cell.textContent = ok ? '✅ ' + note : '❌ 불러오지 못함';
+  cell.className = ok ? 'ok' : 'bad';
+  done++;
+  if (!ok) bad++;
+  if (done === files.length) {
+    document.getElementById('summary').innerHTML = bad === 0
+      ? `<span class="ok">모두 ${files.length}개 잘 불러왔어요.</span>`
+      : `<span class="bad">${files.length}개 중 ${bad}개를 불러오지 못했어요. 파일 이름과 assets 폴더를 확인해 주세요.</span>`;
+  }
+}
+
+for (const name of files) {
+  const src = '../assets/' + name;
+  const row = table.insertRow();
+  const preview = row.insertCell();
+  row.insertCell().textContent = name;
+  const status = row.insertCell();
+  status.textContent = '…';
+
+  if (name.endsWith('.png')) {
+    const img = new Image();
+    img.onload = () => finish(status, true, `${img.naturalWidth}×${img.naturalHeight}`);
+    img.onerror = () => finish(status, false);
+    img.src = src;
+    preview.appendChild(img);
+  } else {
+    const audio = new Audio();
+    audio.preload = 'auto';
+    audio.oncanplaythrough = () => { if (!audio.checked) { audio.checked = true; finish(status, true, `${audio.duration.toFixed(2)}초`); } };
+    audio.onerror = () => finish(status, false);
+    audio.src = src;
+    const button = document.createElement('button');
+    button.textContent = '▶';
+    button.onclick = () => { audio.currentTime = 0; audio.play(); };
+    preview.appendChild(button);
+  }
+}
+</script>
+</body>
+</html>
