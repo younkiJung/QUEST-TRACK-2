@@ -6,12 +6,12 @@
 <style>
   body { margin: 0; background: #1d2433; color: #fff; font-family: sans-serif; text-align: center; }
   canvas { display: block; margin: 16px auto 8px; image-rendering: pixelated; max-width: 100%; border-radius: 6px; }
-  p { margin: 4px; opacity: 0.8; }
+  p { margin: 4px; opacity: 0.85; }
 </style>
 </head>
 <body>
 <canvas id="game" width="960" height="540"></canvas>
-<p>← → 움직이기 · 스페이스 점프 · R 다시 하기</p>
+<p>← → 이동 · 스페이스 점프 (공중에서 한 번 더) · Shift 대시 · R 다시 하기</p>
 
 <script>
 const canvas = document.getElementById('game');
@@ -20,6 +20,7 @@ ctx.imageSmoothingEnabled = false;
 
 const SCALE = 3;          // 픽셀 그림을 3배로 키워서 그림
 const TILE = 18 * SCALE;  // 땅 한 칸 크기
+const W = canvas.width, H = canvas.height;
 
 // ---- 에셋 불러오기 (모두 assets 폴더) ----
 function loadImage(name) {
@@ -43,24 +44,55 @@ const images = {
   groundTop: loadImage('ground-top.png'),
   groundDirt: loadImage('ground-dirt.png'),
   strawberry: loadImage('strawberry.png'),
+  walker1: loadImage('walker-1.png'),
+  walker2: loadImage('walker-2.png'),
+  walkerSquash: loadImage('walker-squash.png'),
+  bat1: loadImage('bat-1.png'),
+  bat2: loadImage('bat-2.png'),
+  heartFull: loadImage('heart-full.png'),
+  heartEmpty: loadImage('heart-empty.png'),
 };
 const sounds = {
   jump: loadSound('jump.wav', 0.5),
   collect: loadSound('collect.wav', 0.6),
   clear: loadSound('clear.wav', 0.6),
+  hurt: loadSound('hurt.wav', 0.7),
+  stomp: loadSound('stomp.wav', 0.7),
+  dash: loadSound('dash.wav', 0.5),
+  warn: loadSound('warn.wav', 0.5),
+  gameover: loadSound('gameover.wav', 0.6),
+  start: loadSound('start.wav', 0.6),
+  land: loadSound('land.wav', 0.3),
 };
 
+// ---- 맞춤 숫자 (여기만 바꿔도 느낌이 달라져요) ----
+const SPEED = 300;            // 걷는 빠르기
+const GRAVITY = 2200;         // 떨어지는 힘
+const JUMP = 820;             // 첫 점프 힘
+const AIR_JUMP = 720;         // 공중 점프 힘
+const STOMP_BOUNCE = 620;     // 적을 밟으면 튀어 오르는 힘
+const DASH_SPEED = 900;       // 대시 빠르기
+const DASH_TIME = 0.16;       // 대시 길이 (초)
+const DASH_COOLDOWN = 0.6;    // 대시를 다시 쓰기까지 (초)
+const JUMP_BUFFER = 0.12;     // 땅에 닿기 직전에 누른 점프를 기억하는 시간 (초)
+const COYOTE_TIME = 0.1;      // 발판에서 떨어진 직후에도 점프할 수 있는 시간 (초)
+const MAX_HP = 3;
+const START_SAFE = 2;         // 시작 직후 무적 (초)
+const HURT_SAFE = 1.5;        // 맞은 뒤 무적 (초)
+const BAT_WARN = 0.8;         // 박쥐가 덤비기 전 예고 시간 (초)
+const RESPAWN = 6;            // 밟힌 적이 다시 나오기까지 (초)
+
 // ---- 땅과 발판 (칸 단위: x, y, 길이) ----
-const COLS = canvas.width / TILE;   // 17.7칸
-const groundRow = 8;                // 맨 아래 땅이 시작하는 줄
+const groundRow = 8;
 const platforms = [
-  { x: 0, y: groundRow, w: Math.ceil(COLS), h: 2 },  // 바닥
+  { x: 0, y: groundRow, w: Math.ceil(W / TILE), h: 2 },  // 바닥
   { x: 2, y: 6, w: 3, h: 1 },
   { x: 7, y: 5, w: 3, h: 1 },
   { x: 12, y: 6, w: 3, h: 1 },
   { x: 4, y: 3, w: 2, h: 1 },
   { x: 11, y: 3, w: 2, h: 1 },
 ];
+const solids = platforms.map(p => ({ x: p.x * TILE, y: p.y * TILE, w: p.w * TILE, h: p.h * TILE }));
 
 // 딸기 자리 (칸 단위)
 const strawberrySpots = [
@@ -69,88 +101,394 @@ const strawberrySpots = [
   [4.5, 2], [11.5, 2],
 ];
 
-let player, strawberries, startTime, clearTime;
+function hit(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+const rand = (a, b) => a + Math.random() * (b - a);
+
+// ---- 최고 기록 (이 브라우저에만 저장) ----
+const BEST_KEY = 'week05-strawberry-best';
+function loadBest() {
+  try { const v = parseFloat(localStorage.getItem(BEST_KEY)); return isNaN(v) ? null : v; } catch { return null; }
+}
+function saveBest(v) {
+  try { localStorage.setItem(BEST_KEY, String(v)); } catch {}
+}
+let best = loadBest();
+
+// ---- 게임 상태 ----
+// mode: title(처음 화면) → ready(준비) → play → clear / over
+let mode = 'title';
+let player, strawberries, enemies, particles, popups, afterimages;
+let time, readyTimer, clearTime, newRecord;
+let hitstop = 0, shake = 0, flash = 0, hudBump = 0, startBanner = 0;
+
+function makeWalker(x, row, minX, maxX, speed) {
+  return { type: 'walker', x, y: row * TILE - 39, w: 42, h: 39, dir: 1, minX, maxX, speed,
+           spawnX: x, alive: true, deadT: 0, spawnT: 0, anim: 0 };
+}
+function makeBat(homeX, homeY) {
+  return { type: 'bat', homeX, homeY, x: homeX - 24, y: homeY - 18, w: 48, h: 36,
+           state: 'hover', t: 3, vx: 0, vy: 0, targetX: 0, targetY: 0, wave: 0,
+           alive: true, deadT: 0, spawnT: 0, anim: 0, spin: 0 };
+}
 
 function reset() {
-  player = { x: 60, y: groundRow * TILE - 72, vx: 0, vy: 0, w: 42, h: 54, onGround: false, jumpsLeft: 2, facing: 1, walkTimer: 0 };
+  // 몸 높이 54 = 낮은 발판 아래 빈칸 한 칸. 이보다 크면 발판 밑을 못 지나감
+  player = { x: 60, y: groundRow * TILE - 54, w: 42, h: 54, vx: 0, vy: 0,
+             onGround: false, facing: 1, walkTimer: 0, sx: 1, sy: 1,
+             hp: MAX_HP, inv: 0, knockT: 0,
+             jumpBuffer: 0, coyote: 0, airJumps: 1,
+             dashT: 0, dashDir: 1, dashCool: 0, canAirDash: true, ghostT: 0 };
   strawberries = strawberrySpots.map(([cx, cy]) => ({ x: cx * TILE + TILE / 2, y: cy * TILE + TILE / 2, got: false }));
-  startTime = performance.now();
+  enemies = [
+    makeWalker(560, groundRow, 300, W - 20, 90),
+    makeWalker(7 * TILE + 10, 5, 7 * TILE, 10 * TILE, 70),
+    makeBat(W / 2, 110),
+  ];
+  particles = [];
+  popups = [];
+  afterimages = [];
+  time = 0;
   clearTime = null;
+  newRecord = false;
+  hitstop = shake = flash = hudBump = 0;
 }
 reset();
+
+function startGame() {
+  reset();
+  mode = 'ready';
+  readyTimer = 1.2;
+  play(sounds.start);
+}
 
 // ---- 키보드 ----
 const keys = {};
 addEventListener('keydown', e => {
-  if (['ArrowLeft', 'ArrowRight', 'Space', 'ArrowUp'].includes(e.code)) e.preventDefault();
-  // 땅에서 한 번, 공중에서 한 번 더 (2단 점프)
-  if (e.code === 'Space' && !e.repeat && player.jumpsLeft > 0) {
-    player.vy = player.onGround ? -820 : -720;
-    player.onGround = false;
-    player.jumpsLeft--;
-    play(sounds.jump);
-  }
-  if (e.code === 'KeyR') reset();
+  if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'].includes(e.code)) e.preventDefault();
   keys[e.code] = true;
+  if (e.repeat) return;
+
+  if (e.code === 'KeyR') { startGame(); return; }
+  if (mode === 'title' || mode === 'clear' || mode === 'over') {
+    if (e.code === 'Space' || e.code === 'Enter') startGame();
+    return;
+  }
+  if (e.code === 'Space') player.jumpBuffer = JUMP_BUFFER;  // 입력 버퍼: 잠깐 기억해 둠
+  if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'KeyX') tryDash();
 });
-addEventListener('keyup', e => { keys[e.code] = false; });
+addEventListener('keyup', e => {
+  keys[e.code] = false;
+  // 스페이스를 일찍 떼면 낮게 뜀
+  if (e.code === 'Space' && mode === 'play' && player.vy < -300 && player.dashT <= 0) player.vy *= 0.5;
+});
 
-// ---- 움직임 ----
-const SPEED = 300, GRAVITY = 2200;
-
-function solidRects() {
-  return platforms.map(p => ({ x: p.x * TILE, y: p.y * TILE, w: p.w * TILE, h: p.h * TILE }));
+// ---- 효과 ----
+function burst(x, y, colors, count, power) {
+  for (let i = 0; i < count; i++) {
+    const a = rand(0, Math.PI * 2), s = rand(power * 0.4, power);
+    particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - power * 0.3,
+                     life: rand(0.35, 0.6), max: 0.6, size: rand(4, 8), color: colors[i % colors.length], gravity: 900 });
+  }
 }
-function hit(a, b) {
-  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+function dust(x, y, count) {
+  for (let i = 0; i < count; i++) {
+    particles.push({ x: x + rand(-14, 14), y, vx: rand(-120, 120), vy: rand(-90, -20),
+                     life: rand(0.25, 0.4), max: 0.4, size: rand(5, 9), color: '#f4f1ea', gravity: 0 });
+  }
+}
+function popup(x, y, text, color) {
+  popups.push({ x, y, text, color, life: 0.8 });
 }
 
-function update(dt) {
+// ---- 플레이어 ----
+function tryDash() {
   const p = player;
-  p.vx = 0;
-  if (keys.ArrowLeft) { p.vx = -SPEED; p.facing = -1; }
-  if (keys.ArrowRight) { p.vx = SPEED; p.facing = 1; }
-  p.vy += GRAVITY * dt;
+  if (mode !== 'play' || p.dashCool > 0 || !p.canAirDash) return;
+  p.dashT = DASH_TIME;
+  p.dashDir = keys.ArrowLeft ? -1 : keys.ArrowRight ? 1 : p.facing;
+  p.facing = p.dashDir;
+  p.dashCool = DASH_COOLDOWN;
+  if (!p.onGround) p.canAirDash = false;
+  p.vy = 0;
+  p.sx = 1.3; p.sy = 0.75;
+  dust(p.x + p.w / 2, p.y + p.h, 5);
+  play(sounds.dash);
+}
 
-  const rects = solidRects();
+function doJump(power) {
+  const p = player;
+  p.vy = -power;
+  p.onGround = false;
+  p.jumpBuffer = 0;
+  p.coyote = 0;
+  p.sx = 0.75; p.sy = 1.3;
+  play(sounds.jump);
+}
+
+function hurt(fromX) {
+  const p = player;
+  p.hp--;
+  p.inv = HURT_SAFE;
+  p.knockT = 0.25;
+  p.dashT = 0;
+  p.vx = (p.x + p.w / 2 < fromX ? -1 : 1) * 420;
+  p.vy = -480;
+  hitstop = 0.12;
+  shake = 12;
+  flash = 0.35;
+  burst(p.x + p.w / 2, p.y + p.h / 2, ['#ff5d5d', '#ffffff'], 10, 300);
+  play(sounds.hurt);
+  if (p.hp <= 0) {
+    mode = 'over';
+    play(sounds.gameover);
+  }
+}
+
+function updatePlayer(dt) {
+  const p = player;
+  p.inv = Math.max(0, p.inv - dt);
+  p.knockT = Math.max(0, p.knockT - dt);
+  p.dashCool = Math.max(0, p.dashCool - dt);
+  p.jumpBuffer = Math.max(0, p.jumpBuffer - dt);
+  p.coyote = Math.max(0, p.coyote - dt);
+
+  // 점프: 땅(또는 막 떨어진 직후)이면 첫 점프, 아니면 공중 점프
+  if (p.jumpBuffer > 0 && p.dashT <= 0 && p.knockT <= 0) {
+    if (p.onGround || p.coyote > 0) {
+      doJump(JUMP);
+    } else if (p.airJumps > 0) {
+      p.airJumps = 0;
+      doJump(AIR_JUMP);
+      burst(p.x + p.w / 2, p.y + p.h, ['#ffffff', '#cfefff'], 6, 160);
+    }
+  }
+
+  if (p.dashT > 0) {
+    p.dashT -= dt;
+    p.vx = p.dashDir * DASH_SPEED;
+    p.vy = 0;
+    p.ghostT -= dt;
+    if (p.ghostT <= 0) {
+      afterimages.push({ x: p.x, y: p.y, facing: p.facing, life: 0.2 });
+      p.ghostT = 0.03;
+    }
+  } else {
+    let dir = 0;
+    if (p.knockT <= 0) {
+      if (keys.ArrowLeft) dir -= 1;
+      if (keys.ArrowRight) dir += 1;
+      if (dir) p.facing = dir;
+    }
+    const target = dir * SPEED;
+    const grip = p.knockT > 0 ? 2 : p.onGround ? 20 : 12;
+    p.vx += (target - p.vx) * Math.min(1, grip * dt);
+    p.vy = Math.min(p.vy + GRAVITY * dt, 1100);
+  }
 
   // 옆으로 움직이고 벽에 막히기
   p.x += p.vx * dt;
-  p.x = Math.max(0, Math.min(canvas.width - p.w, p.x));
-  for (const r of rects) {
+  p.x = Math.max(0, Math.min(W - p.w, p.x));
+  for (const r of solids) {
     if (hit(p, r)) p.x = p.vx > 0 ? r.x - p.w : r.x + r.w;
   }
 
   // 위아래로 움직이고 땅에 서기
+  const fallSpeed = p.vy;
+  const wasOnGround = p.onGround;
   p.y += p.vy * dt;
   p.onGround = false;
-  for (const r of rects) {
+  for (const r of solids) {
     if (hit(p, r)) {
-      if (p.vy > 0) { p.y = r.y - p.h; p.onGround = true; p.jumpsLeft = 2; }
+      if (p.vy > 0) { p.y = r.y - p.h; p.onGround = true; }
       else { p.y = r.y + r.h; }
       p.vy = 0;
     }
   }
+  if (p.onGround) {
+    p.coyote = COYOTE_TIME;
+    p.airJumps = 1;
+    p.canAirDash = true;
+    if (!wasOnGround && fallSpeed > 500) {
+      p.sx = 1.25; p.sy = 0.8;
+      dust(p.x + p.w / 2, p.y + p.h, 6);
+      play(sounds.land);
+    }
+  }
 
-  p.walkTimer = p.vx !== 0 && p.onGround ? p.walkTimer + dt : 0;
+  // 찌그러짐이 천천히 돌아옴
+  p.sx += (1 - p.sx) * Math.min(1, 12 * dt);
+  p.sy += (1 - p.sy) * Math.min(1, 12 * dt);
+  p.walkTimer = Math.abs(p.vx) > 40 && p.onGround ? p.walkTimer + dt : 0;
 
   // 딸기 먹기
   for (const s of strawberries) {
     if (!s.got && hit(p, { x: s.x - 24, y: s.y - 27, w: 48, h: 54 })) {
       s.got = true;
+      burst(s.x, s.y, ['#ff4d5a', '#ffd1d6', '#5ac35a'], 12, 320);
+      popup(s.x, s.y - 30, '+1', '#ffe066');
+      hudBump = 1;
       play(sounds.collect);
     }
   }
-  if (clearTime === null && strawberries.every(s => s.got)) {
-    clearTime = (performance.now() - startTime) / 1000;
+  if (strawberries.every(s => s.got)) {
+    mode = 'clear';
+    clearTime = time;
+    if (best === null || clearTime < best) { best = clearTime; newRecord = true; saveBest(best); }
     play(sounds.clear);
   }
 }
 
+// ---- 적 ----
+function updateEnemies(dt) {
+  const p = player;
+  for (const e of enemies) {
+    e.anim += dt;
+
+    if (!e.alive) {
+      e.deadT -= dt;
+      if (e.type === 'bat') { e.vy += GRAVITY * dt; e.y += e.vy * dt; e.spin += dt * 10; }
+      if (e.deadT <= 0) {
+        // 다시 나옴: 1초 동안 깜빡이며 닿아도 괜찮음
+        e.alive = true;
+        e.spawnT = 1;
+        if (e.type === 'walker') { e.x = e.spawnX; }
+        else { e.x = e.homeX - 24; e.y = e.homeY - 18; e.state = 'hover'; e.t = 2.5; e.spin = 0; }
+      }
+      continue;
+    }
+    e.spawnT = Math.max(0, e.spawnT - dt);
+
+    if (e.type === 'walker') {
+      e.x += e.dir * e.speed * dt;
+      if (e.x < e.minX) { e.x = e.minX; e.dir = 1; }
+      if (e.x + e.w > e.maxX) { e.x = e.maxX - e.w; e.dir = -1; }
+    } else {
+      updateBat(e, dt);
+    }
+
+    if (e.spawnT > 0 || !hit(p, e)) continue;
+
+    // 위에서 떨어지며 닿으면 밟기, 아니면 맞기
+    const prevBottom = p.y + p.h - p.vy * dt;
+    if (p.vy > 0 && prevBottom <= e.y + 14) {
+      e.alive = false;
+      e.deadT = RESPAWN;
+      e.vy = -300;
+      p.vy = -STOMP_BOUNCE;
+      p.airJumps = 1;
+      p.canAirDash = true;
+      p.sx = 1.3; p.sy = 0.75;
+      hitstop = 0.06;
+      shake = 5;
+      burst(e.x + e.w / 2, e.y + e.h / 2, ['#ffffff', '#2cc5f6', '#434a5f'], 10, 280);
+      popup(e.x + e.w / 2, e.y - 10, '밟았다!', '#ffffff');
+      play(sounds.stomp);
+    } else if (p.inv <= 0 && p.dashT <= 0) {
+      hurt(e.x + e.w / 2);
+    }
+  }
+}
+
+function updateBat(b, dt) {
+  const p = player;
+  b.t -= dt;
+  if (b.state === 'hover') {
+    b.wave += dt;
+    const hx = b.homeX + Math.sin(b.wave * 1.1) * 160;
+    const hy = b.homeY + Math.sin(b.wave * 3) * 10;
+    b.x += (hx - 24 - b.x) * Math.min(1, 4 * dt);
+    b.y += (hy - 18 - b.y) * Math.min(1, 4 * dt);
+    if (b.t <= 0) {
+      // 공격 예고: 노릴 곳을 정하고 잠깐 보여 줌
+      b.state = 'warn';
+      b.t = BAT_WARN;
+      b.targetX = p.x + p.w / 2;
+      b.targetY = Math.min(p.y + p.h / 2, groundRow * TILE - 30);
+      play(sounds.warn);
+    }
+  } else if (b.state === 'warn') {
+    if (b.t <= 0) {
+      const dx = b.targetX - (b.x + 24), dy = b.targetY - (b.y + 18);
+      const len = Math.hypot(dx, dy) || 1;
+      b.vx = dx / len * 560;
+      b.vy = dy / len * 560;
+      b.state = 'dive';
+      b.t = len / 560 + 0.15;
+    }
+  } else if (b.state === 'dive') {
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+    if (b.t <= 0 || b.y + b.h > groundRow * TILE) b.state = 'return';
+  } else if (b.state === 'return') {
+    const hx = b.homeX + Math.sin(b.wave * 1.1) * 160 - 24, hy = b.homeY - 18;
+    const dx = hx - b.x, dy = hy - b.y, len = Math.hypot(dx, dy);
+    if (len < 8) { b.state = 'hover'; b.t = rand(2.5, 4); }
+    else { b.x += dx / len * 260 * dt; b.y += dy / len * 260 * dt; }
+  }
+}
+
+// ---- 한 번 움직이기 ----
+function update(dt) {
+  shake = Math.max(0, shake - 40 * dt);
+  flash = Math.max(0, flash - dt);
+  hudBump = Math.max(0, hudBump - 4 * dt);
+  startBanner = Math.max(0, startBanner - dt);
+  for (const q of particles) { q.life -= dt; q.vy += q.gravity * dt; q.x += q.vx * dt; q.y += q.vy * dt; }
+  particles = particles.filter(q => q.life > 0);
+  for (const q of popups) { q.life -= dt; q.y -= 50 * dt; }
+  popups = popups.filter(q => q.life > 0);
+  for (const a of afterimages) a.life -= dt;
+  afterimages = afterimages.filter(a => a.life > 0);
+
+  if (mode === 'ready') {
+    readyTimer -= dt;
+    if (readyTimer <= 0) {
+      mode = 'play';
+      player.inv = START_SAFE;  // 시작 직후 보호
+      startBanner = 0.8;
+    }
+    return;
+  }
+  if (mode !== 'play') return;
+
+  // 타격 멈춤: 맞거나 밟은 순간 아주 잠깐 멈춰서 힘이 느껴지게
+  if (hitstop > 0) { hitstop -= dt; return; }
+
+  time += dt;
+  updatePlayer(dt);
+  if (mode === 'play') updateEnemies(dt);
+}
+
 // ---- 그리기 ----
-function draw(now) {
-  ctx.fillStyle = '#9fd8ff';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+function label(text, x, y, size, align = 'left', color = '#ffffff') {
+  ctx.font = `bold ${size}px sans-serif`;
+  ctx.textAlign = align;
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = Math.max(4, size / 5);
+  ctx.strokeStyle = '#1d2433';
+  ctx.strokeText(text, x, y);
+  ctx.fillStyle = color;
+  ctx.fillText(text, x, y);
+}
+
+// 24px 캐릭터 그림을 발밑(bottom)에 맞춰 그림
+function drawSprite(img, cx, bottom, facing, sx = 1, sy = 1) {
+  const size = 24 * SCALE;
+  ctx.save();
+  ctx.translate(cx, bottom);
+  ctx.scale(facing * sx, sy);
+  ctx.drawImage(img, -size / 2, -size, size, size);
+  ctx.restore();
+}
+
+function drawWorld(now) {
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, '#7cc7ff');
+  sky.addColorStop(1, '#c9ecff');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, H);
 
   for (const pl of platforms) {
     for (let i = 0; i < pl.w; i++) {
@@ -164,46 +502,176 @@ function draw(now) {
   for (const s of strawberries) {
     if (s.got) continue;
     const bob = Math.sin(now / 250 + s.x) * 4;
-    ctx.drawImage(images.strawberry, s.x - 27, s.y - 30 + bob, 18 * SCALE, 20 * SCALE);
+    ctx.drawImage(images.strawberry, s.x - 30, s.y - 33 + bob, 20 * SCALE, 22 * SCALE);
   }
 
-  // 플레이어: 걸을 때 두 그림을 번갈아 보여 줌
+  for (const e of enemies) drawEnemy(e, now);
+
+  for (const a of afterimages) {
+    ctx.globalAlpha = a.life / 0.2 * 0.5;
+    drawSprite(images.stand, a.x + player.w / 2, a.y + player.h, a.facing);
+  }
+  ctx.globalAlpha = 1;
+
+  // 플레이어: 무적일 때 깜빡임
   const p = player;
-  const frame = Math.floor(p.walkTimer * 8) % 2 === 1 ? images.walk : images.stand;
-  const size = 24 * SCALE;
+  if (p.inv <= 0 || Math.floor(p.inv * 16) % 2 === 0) {
+    const frame = Math.floor(p.walkTimer * 8) % 2 === 1 ? images.walk : images.stand;
+    drawSprite(frame, p.x + p.w / 2, p.y + p.h, p.facing, p.sx, p.sy);
+  }
+
+  for (const q of particles) {
+    ctx.globalAlpha = Math.min(1, q.life / q.max * 1.5);
+    ctx.fillStyle = q.color;
+    ctx.fillRect(q.x - q.size / 2, q.y - q.size / 2, q.size, q.size);
+  }
+  ctx.globalAlpha = 1;
+  for (const q of popups) {
+    ctx.globalAlpha = Math.min(1, q.life * 2);
+    label(q.text, q.x, q.y, 24, 'center', q.color);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawEnemy(e, now) {
+  const blink = e.spawnT > 0 && Math.floor(e.spawnT * 12) % 2 === 0;
+  if (blink) ctx.globalAlpha = 0.35;
+
+  if (e.type === 'walker') {
+    if (!e.alive) {
+      if (e.deadT > RESPAWN - 0.5) drawSprite(images.walkerSquash, e.x + e.w / 2, e.y + e.h, 1);
+    } else {
+      const frame = Math.floor(e.anim * 6) % 2 ? images.walker2 : images.walker1;
+      drawSprite(frame, e.x + e.w / 2, e.y + e.h, -e.dir);
+    }
+  } else {
+    const cx = e.x + e.w / 2, cy = e.y + e.h / 2;
+    if (!e.alive) {
+      if (e.y < H) {
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(e.spin);
+        ctx.drawImage(images.bat1, -36, -36, 72, 72);
+        ctx.restore();
+      }
+    } else {
+      // 공격 예고: 노릴 곳까지 점선, 머리 위 느낌표, 몸 떨림
+      let jx = 0;
+      if (e.state === 'warn') {
+        jx = Math.sin(now / 20) * 3;
+        ctx.save();
+        ctx.setLineDash([10, 8]);
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = 'rgba(255, 70, 70, 0.8)';
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(e.targetX, e.targetY);
+        ctx.stroke();
+        ctx.restore();
+        ctx.strokeStyle = 'rgba(255, 70, 70, 0.9)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(e.targetX, e.targetY, 18 + Math.sin(now / 60) * 4, 0, Math.PI * 2);
+        ctx.stroke();
+        label('!', cx, cy - 40, 36, 'center', '#ff4d4d');
+      }
+      const frame = Math.floor(e.anim * (e.state === 'dive' ? 16 : 8)) % 2 ? images.bat2 : images.bat1;
+      ctx.drawImage(frame, cx - 36 + jx, cy - 36, 72, 72);
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawHud() {
+  const p = player;
+  for (let i = 0; i < MAX_HP; i++) {
+    ctx.drawImage(i < p.hp ? images.heartFull : images.heartEmpty, 16 + i * 42, 12, 36, 36);
+  }
+
+  // 대시 게이지
+  const ready = 1 - p.dashCool / DASH_COOLDOWN;
+  ctx.fillStyle = '#1d2433';
+  ctx.fillRect(20, 54, 120, 12);
+  ctx.fillStyle = ready >= 1 ? '#66e0ff' : '#5a6b8c';
+  ctx.fillRect(22, 56, 116 * ready, 8);
+  label('대시', 148, 66, 16);
+
+  const got = strawberries.filter(s => s.got).length;
+  const bump = 1 + hudBump * 0.35;
   ctx.save();
-  ctx.translate(p.x + p.w / 2, p.y + p.h - size + 9);
-  ctx.scale(p.facing, 1);
-  ctx.drawImage(frame, -size / 2, 0, size, size);
+  ctx.translate(W / 2 - 40, 34);
+  ctx.scale(bump, bump);
+  ctx.drawImage(images.strawberry, -20, -22, 40, 44);
+  ctx.restore();
+  label(`${got} / ${strawberries.length}`, W / 2 - 10, 46, 30);
+
+  label(`${time.toFixed(1)}초`, W - 20, 46, 30, 'right');
+}
+
+function overlay(alpha) {
+  ctx.fillStyle = `rgba(16, 20, 32, ${alpha})`;
+  ctx.fillRect(0, 0, W, H);
+}
+
+function drawScreens() {
+  const cx = W / 2;
+  if (mode === 'title') {
+    overlay(0.7);
+    label('딸기 모으기', cx, 130, 64, 'center', '#ff6b7a');
+    label('딸기 9개를 모두 모으면 끝! 빠를수록 좋아요.', cx, 190, 26, 'center');
+    const lines = [
+      '← →  이동',
+      '스페이스  점프 · 공중에서 한 번 더',
+      'Shift  대시 (대시하는 동안은 안 맞아요)',
+      '적의 머리를 밟으면 물리칠 수 있어요',
+      '박쥐가 !  를 띄우면 빨간 원으로 덤벼요',
+    ];
+    lines.forEach((t, i) => label(t, cx, 250 + i * 38, 22, 'center', '#e6ecf5'));
+    if (best !== null) label(`최고 기록 ${best.toFixed(1)}초`, cx, 460, 22, 'center', '#ffe066');
+    ctx.globalAlpha = 0.6 + Math.sin(performance.now() / 250) * 0.4;
+    label('스페이스를 눌러 시작', cx, 505, 28, 'center', '#ffe066');
+    ctx.globalAlpha = 1;
+  } else if (mode === 'ready') {
+    overlay(0.35);
+    label('준비…', cx, H / 2 + 10, 56, 'center');
+  } else if (mode === 'clear') {
+    overlay(0.6);
+    label('다 모았어!', cx, H / 2 - 50, 60, 'center', '#ffe066');
+    label(`${clearTime.toFixed(1)}초`, cx, H / 2 + 10, 40, 'center');
+    label(newRecord ? '새 최고 기록!' : `최고 기록 ${best.toFixed(1)}초`, cx, H / 2 + 55, 26, 'center', newRecord ? '#7ee08a' : '#e6ecf5');
+    label('스페이스 또는 R 로 다시 하기', cx, H / 2 + 110, 22, 'center', '#e6ecf5');
+  } else if (mode === 'over') {
+    overlay(0.65);
+    label('게임 오버', cx, H / 2 - 30, 60, 'center', '#ff6b6b');
+    label(`딸기 ${strawberries.filter(s => s.got).length} / ${strawberries.length}`, cx, H / 2 + 25, 30, 'center');
+    label('스페이스 또는 R 로 다시 하기', cx, H / 2 + 80, 22, 'center', '#e6ecf5');
+  }
+  if (mode === 'play' && startBanner > 0) {
+    ctx.globalAlpha = Math.min(1, startBanner * 2);
+    label('시작!', cx, H / 2, 64, 'center', '#ffe066');
+    ctx.globalAlpha = 1;
+  }
+}
+
+function draw(now) {
+  ctx.save();
+  if (shake > 0) ctx.translate(rand(-shake, shake), rand(-shake, shake));
+  drawWorld(now);
   ctx.restore();
 
-  // 점수와 시간
-  const got = strawberries.filter(s => s.got).length;
-  const time = clearTime ?? (now - startTime) / 1000;
-  ctx.fillStyle = '#1d2433';
-  ctx.font = 'bold 28px sans-serif';
-  ctx.textAlign = 'left';
-  ctx.fillText(`🍓 ${got} / ${strawberries.length}`, 20, 44);
-  ctx.textAlign = 'right';
-  ctx.fillText(`${time.toFixed(1)}초`, canvas.width - 20, 44);
-
-  if (clearTime !== null) {
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#fff';
-    ctx.textAlign = 'center';
-    ctx.font = 'bold 56px sans-serif';
-    ctx.fillText('다 모았어!', canvas.width / 2, canvas.height / 2 - 10);
-    ctx.font = '28px sans-serif';
-    ctx.fillText(`${clearTime.toFixed(1)}초 걸렸어요 · R 을 누르면 다시`, canvas.width / 2, canvas.height / 2 + 40);
+  if (flash > 0) {
+    ctx.fillStyle = `rgba(255, 60, 60, ${flash * 0.6})`;
+    ctx.fillRect(0, 0, W, H);
   }
+  if (mode !== 'title') drawHud();
+  drawScreens();
 }
 
 let last = performance.now();
 function loop(now) {
   const dt = Math.min((now - last) / 1000, 1 / 30);
   last = now;
-  if (clearTime === null) update(dt);
+  update(dt);
   draw(now);
   requestAnimationFrame(loop);
 }
