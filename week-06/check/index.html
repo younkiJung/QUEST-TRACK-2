@@ -78,6 +78,9 @@ async function run() {
       [{ name: '치즈크러스트피자(수제)', allergies: [1, 2, 5, 6, 13, 16] }]],
     ['우유 2.<br>현미밥', [{ name: '우유', allergies: [2] }, { name: '현미밥', allergies: [] }]],
     ['', []],
+    ['흑미밥 &lt;br/&gt;배추김치 (9)', [{ name: '흑미밥', allergies: [] }, { name: '배추김치', allergies: [9] }]],
+    ['돈까스(5.6.10)/소스 (12)<BR>깍두기(9.)', [{ name: '돈까스/소스',allergies: [5, 6, 10, 12] }, { name: '깍두기', allergies: [9] }]],
+    ['동파육(중) (5.6.10)< br />보쌈김치/파김치(선택) (9)', [{ name: '동파육(중)', allergies: [5, 6, 10] }, { name: '보쌈김치/파김치(선택)', allergies: [9] }]],
   ];
   cases.forEach(([input, want], i) => {
     const got = parseDishes(input);
@@ -157,7 +160,87 @@ async function run() {
     window.fetch = realFetch;
   }
 
+  // 7. 인터넷이 끊기면 마지막으로 받은 정보 보여 주기 (진짜 기억은 건드리지 않게 잠깐 빌려 쓰고 돌려놓음)
+  let saved = null;
+  try { saved = localStorage.getItem(LAST_KEY); } catch (e) {}
+  const testSchool = { office: 'T00', code: '0000000' };
+  const testMeals = [{ meal: '중식', dishes: [{ name: '확인용 밥', allergies: [] }], kcal: '' }];
+  const testTime = new Date(2026, 10, 13, 15, 5).getTime();
+  saveLastMeals(testSchool, '20261113', testMeals, testTime);
+  window.fetch = () => Promise.reject(new TypeError('Failed to fetch'));
+  try {
+    const r = await getMealsOrLast(testSchool, '20261114');
+    row(r.offline && same(r.meals, testMeals) && r.ymd === '20261113', '끊겼을 때 마지막 정보', `받은 때: ${savedAtLabel(r.savedAt)} · ${ymdLabel(r.ymd)} 식단 · 까닭: ${r.reason}`);
+    row(savedAtLabel(testTime) === '11월 13일 (금) 오후 3:05', '받은 때 글 모양', savedAtLabel(testTime));
+  } catch (e) {
+    row(false, '끊겼을 때 마지막 정보', e.message);
+  } finally {
+    window.fetch = realFetch;
+    try { saved === null ? localStorage.removeItem(LAST_KEY) : localStorage.setItem(LAST_KEY, saved); } catch (e) {}
+  }
+  window.fetch = () => Promise.reject(new TypeError('Failed to fetch'));
+  try {
+    await getMealsOrLast({ office: 'T01', code: '1111111' }, '20261114');
+    row(false, '마지막 정보도 없을 때', '오류가 나야 하는데 나지 않았어요.');
+  } catch (e) {
+    row(true, '마지막 정보도 없을 때', `앱이 보여 줄 글: ${e.message}`);
+  } finally {
+    window.fetch = realFetch;
+  }
+
+  // 8. 폰에 설치 (PWA)
+  for (const name of ['icon-192.png', 'icon-512.png', 'icon-maskable-512.png']) {
+    const ok = await new Promise(res => {
+      const img = new Image();
+      img.onload = () => res(`${img.naturalWidth}×${img.naturalHeight}`);
+      img.onerror = () => res(null);
+      img.src = '../icons/' + name;
+    });
+    row(!!ok, `아이콘 ${name}`, ok || '불러오지 못했어요.');
+  }
+  if (location.protocol === 'file:') {
+    skip('manifest · 서비스 워커', '파일을 두 번 눌러 열면 확인할 수 없어요. GitHub Pages 주소에서 이 페이지를 열면 확인돼요.');
+  } else {
+    try {
+      const m = await (await realFetch('../manifest.webmanifest')).json();
+      const sizes = (m.icons || []).map(i => i.sizes);
+      const ok = m.name && m.start_url && m.display === 'standalone' && sizes.includes('192x192') && sizes.includes('512x512');
+      row(ok, 'manifest', `${m.name} · ${m.display} · 아이콘 ${sizes.join(', ')}`);
+    } catch (e) {
+      row(false, 'manifest', '../manifest.webmanifest 를 읽지 못했어요.');
+    }
+    if ('serviceWorker' in navigator) {
+      try {
+        const reg = await navigator.serviceWorker.register('../sw.js', { scope: '../' });
+        const worker = reg.active || reg.waiting || reg.installing;
+        if (!reg.active) await new Promise(res => {
+          worker.addEventListener('statechange', () => { if (worker.state === 'activated' || worker.state === 'redundant') res(); });
+          setTimeout(res, 8000);
+        });
+        row(!!reg.active, '서비스 워커', reg.active ? `켜짐 (범위: ${reg.scope})` : '켜지지 않았어요.');
+        const cache = await caches.open((await caches.keys()).find(k => k.startsWith('meal-app-')) || 'none');
+        const stored = (await cache.keys()).length;
+        row(stored >= 7, '인터넷 없이 열 파일 저장', `${stored}개 저장됨`);
+      } catch (e) {
+        row(false, '서비스 워커', e.message);
+      }
+    } else {
+      skip('서비스 워커', '이 브라우저는 서비스 워커를 쓰지 못해요.');
+    }
+  }
+
   finish();
+}
+
+function skip(title, note) {
+  const r = table.insertRow();
+  r.insertCell().textContent = '➖';
+  const c = r.insertCell();
+  c.textContent = title + ' (건너뜀)';
+  const n = document.createElement('div');
+  n.className = 'note';
+  n.textContent = note;
+  c.appendChild(n);
 }
 
 function finish() {

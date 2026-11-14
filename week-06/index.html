@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>오늘 급식</title>
+<meta name="theme-color" content="#ff8a3d">
+<meta name="description" content="나이스 급식 식단 정보로 우리 학교 오늘 급식을 보여 주는 앱">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="오늘 급식">
 <style>
   * { box-sizing: border-box; }
   body {
@@ -45,6 +52,12 @@
   ul.schools button { width: 100%; text-align: left; margin-bottom: 8px; }
   ul.schools small { color: #888; }
   .hint { font-size: 14px; color: #888; margin: 10px 0 0; }
+
+  .offline { background: #fff3cd; border: 1px solid #f0d58a; border-radius: 16px; padding: 12px 16px; margin-bottom: 14px; font-size: 15px; word-break: keep-all; overflow-wrap: anywhere; }
+  .offline strong { color: #8a5a00; }
+  .offline p { margin: 4px 0; color: #6b5a2a; }
+  .offline .when { font-weight: bold; color: #5a4a1a; }
+  .offline button { margin-top: 6px; font-size: 14px; padding: 6px 12px; }
 
   details { margin-top: 18px; font-size: 14px; color: #777; }
   summary { cursor: pointer; }
@@ -176,12 +189,17 @@ async function showMeals(school) {
   showSchoolLine(school);
   notice('loading', '급식을 불러오는 중이에요…', '나이스에서 오늘 식단을 받아 오고 있어요.');
   try {
-    const meals = await getMeals(school, today.ymd);
+    const result = await getMealsOrLast(school, today.ymd);
+    const meals = result.meals;
+    const banner = result.offline ? offlineBanner(result, () => showMeals(school)) : null;
     if (meals.length === 0) {
-      notice('empty', '오늘은 급식이 없습니다', '주말·방학·휴일이거나 학교가 식단을 아직 올리지 않았을 수 있어요.');
+      const day = result.ymd === today.ymd ? '오늘은' : `${ymdLabel(result.ymd)}에는`;
+      notice('empty', `${day} 급식이 없습니다`, '주말·방학·휴일이거나 학교가 식단을 아직 올리지 않았을 수 있어요.');
+      if (banner) view.prepend(banner);
       return;
     }
     view.replaceChildren();
+    if (banner) view.appendChild(banner);
     for (const meal of meals) {
       const card = el('div', 'card');
       const h2 = el('h2', '', meal.meal);
@@ -205,12 +223,31 @@ async function showMeals(school) {
   }
 }
 
+// 인터넷이 끊겨 마지막으로 받은 정보를 보여 줄 때 위에 붙는 알림
+function offlineBanner(result, retry) {
+  const box = el('div', 'offline');
+  box.appendChild(el('strong', '', '새 정보를 받아 오지 못했어요'));
+  box.appendChild(el('p', '', result.reason));
+  let text = `마지막으로 받은 정보를 보여 줘요 · 받은 때: ${savedAtLabel(result.savedAt)}`;
+  if (result.ymd !== today.ymd) text += ` · ${ymdLabel(result.ymd)} 식단이에요 (오늘 것 아님)`;
+  box.appendChild(el('p', 'when', text));
+  const b = el('button', '', '다시 해 보기');
+  b.onclick = retry;
+  box.appendChild(b);
+  return box;
+}
+
 function start() {
   const school = loadSchool();
   if (school && school.office && school.code) showMeals(school);
   else showSchoolPicker();
 }
 start();
+
+// 서비스 워커: 인터넷이 끊겨도 앱 화면이 열리게 한다 (https 나 localhost 에서만 됨. 파일을 두 번 눌러 열면 건너뜀)
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
 </script>
 </body>
 </html>

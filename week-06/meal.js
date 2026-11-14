@@ -54,16 +54,26 @@ async function askNeis(service, params, timeoutMs = 10000) {
 // "치즈크러스트피자(수제) (1.2.5.6.13.16)<br/>깍두기 (9)<br/>귤 " → [{ name, allergies: [..] }]
 function parseDishes(text) {
   return String(text || '')
-    .split(/<br\s*\/?>/i)
-    .map(line => line.trim())
+    .replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&amp;/gi, '&') // &lt;br/&gt; 처럼 바뀌어 온 글자
+    .split(/<\s*br\s*\/?\s*>|\r?\n/i) // <br/>, <br>, < br / >, 줄바꿈 모두 줄 나눔으로
+    .map(line => line.replace(/<[^>]*>/g, '').trim()) // 남은 HTML 표시는 지움
     .filter(Boolean)
     .map(line => {
-      // 끝에 붙은 (1.2.5) 또는 1.2.5. 모양의 알레르기 번호
-      const m = line.match(/\s*\(([\d.\s]+)\)\s*$/) || line.match(/\s+((?:\d{1,2}\.)+\d{0,2})\s*$/);
-      if (!m) return { name: line, allergies: [] };
-      const allergies = m[1].split('.').map(s => parseInt(s, 10)).filter(n => n >= 1 && n <= 19);
-      return { name: line.slice(0, m.index).trim(), allergies };
-    });
+      const numbers = [];
+      const take = (_, group) => {
+        numbers.push(...group.split('.').map(s => parseInt(s, 10)));
+        return ' ';
+      };
+      const name = line
+        .replace(/\(\s*(\d{1,2}(?:\s*\.\s*\d{1,2})*\.?)\s*\)/g, take) // 어디에 있든 (1.2.5) 모양
+        .replace(/\s+((?:\d{1,2}\.)+\d{0,2})\s*$/, take) // 끝에 붙은 1.2.5. 모양
+        .replace(/\s+/g, ' ')
+        .replace(/\s+([/,])/g, '$1') // "돈까스 /소스" → "돈까스/소스"
+        .trim();
+      const allergies = numbers.filter(n => n >= 1 && n <= 19);
+      return { name, allergies };
+    })
+    .filter(dish => dish.name);
 }
 
 // 학교 찾기 → [{ office, code, name, region, kind }]
@@ -76,6 +86,50 @@ async function findSchools(name) {
     region: r.LCTN_SC_NM,
     kind: r.SCHUL_KND_SC_NM,
   }));
+}
+
+// 마지막으로 받은 급식 기억하기 (그 브라우저에만 저장. 저장이 막혀 있으면 조용히 넘어감)
+const LAST_KEY = 'meal-last';
+
+function saveLastMeals(school, ymd, meals, savedAt = Date.now()) {
+  try {
+    localStorage.setItem(LAST_KEY, JSON.stringify({ office: school.office, code: school.code, ymd, meals, savedAt }));
+  } catch (e) {}
+}
+
+function loadLastMeals(school) {
+  try {
+    const last = JSON.parse(localStorage.getItem(LAST_KEY));
+    if (last && last.office === school.office && last.code === school.code && Array.isArray(last.meals)) return last;
+  } catch (e) {}
+  return null;
+}
+
+// 1700000000000 → "11월 14일 (토) 오후 3:05"
+function savedAtLabel(ms) {
+  const d = new Date(ms);
+  const h = d.getHours();
+  return `${todayInfo(d).label} ${h < 12 ? '오전' : '오후'} ${h % 12 || 12}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+// 20261113 → "11월 13일 (금)"
+function ymdLabel(ymd) {
+  return todayInfo(new Date(+ymd.slice(0, 4), +ymd.slice(4, 6) - 1, +ymd.slice(6, 8))).label;
+}
+
+// 급식을 받아 오고, 못 받으면 마지막으로 받은 정보로 대신한다.
+// 돌려주는 값: { meals, ymd, offline: false } 또는 { meals, ymd, offline: true, savedAt, reason }
+// 마지막 정보도 없으면 까닭을 담은 오류를 던진다.
+async function getMealsOrLast(school, ymd) {
+  try {
+    const meals = await getMeals(school, ymd);
+    saveLastMeals(school, ymd, meals);
+    return { meals, ymd, offline: false };
+  } catch (e) {
+    const last = loadLastMeals(school);
+    if (!last) throw e;
+    return { meals: last.meals, ymd: last.ymd, offline: true, savedAt: last.savedAt, reason: e.message };
+  }
 }
 
 // 그날 급식 → [{ meal: '중식', dishes: [...], kcal }] (급식이 없으면 빈 목록)
