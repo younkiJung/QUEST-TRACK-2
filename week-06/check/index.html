@@ -2,96 +2,173 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<title>에셋 확인</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>급식 앱 확인</title>
 <style>
-  body { margin: 0; padding: 24px; background: #1d2433; color: #fff; font-family: sans-serif; }
+  body { margin: 0; padding: 24px 16px; background: #1d2433; color: #fff; font-family: sans-serif; line-height: 1.5; }
+  main { max-width: 760px; margin: 0 auto; }
   h1 { margin-top: 0; }
-  table { border-collapse: collapse; }
-  td { padding: 6px 12px; border-bottom: 1px solid #3a4560; vertical-align: middle; }
-  img { image-rendering: pixelated; width: 48px; height: auto; background: #9fd8ff; }
-  button { font-size: 14px; }
+  table { border-collapse: collapse; width: 100%; }
+  td { padding: 6px 10px; border-bottom: 1px solid #3a4560; vertical-align: top; overflow-wrap: anywhere; }
+  td:first-child { width: 2em; }
   .ok { color: #7ee08a; }
   .bad { color: #ff7b7b; font-weight: bold; }
+  .note { color: #aab4cc; font-size: 14px; }
   #summary { font-size: 20px; margin: 16px 0; }
+  form { display: flex; gap: 8px; margin: 12px 0; }
+  input { flex: 1; min-width: 0; font-size: 16px; padding: 6px 10px; }
+  button { font-size: 16px; }
 </style>
 </head>
 <body>
-<h1>에셋 확인</h1>
-<p>게임(../index.html)이 쓰는 그림과 소리가 assets 폴더에 있는지 하나씩 불러 봐요. 소리는 ▶ 를 눌러 직접 들어 보세요.</p>
+<main>
+<h1>급식 앱 확인</h1>
+<p>앱(../index.html)이 쓰는 파일과 나이스 API 가 잘 돌아가는지 하나씩 확인해요.
+학교는 앱에서 고른 학교를 쓰고, 고른 학교가 없으면 아래에 학교 이름을 넣어 주세요.</p>
+<form id="form"><input id="q" placeholder="학교 이름 (앱에서 학교를 골랐으면 비워 둬도 돼요)"><button>다시 확인</button></form>
 <div id="summary">확인하는 중…</div>
 <table id="list"></table>
+</main>
 
+<script src="../meal.js"></script>
 <script>
-// 게임에서 assets 파일을 더하거나 바꾸면 여기에도 적어 주세요.
-const files = [
-  'player-stand.png',
-  'player-walk.png',
-  'ground-top.png',
-  'ground-dirt.png',
-  'strawberry.png',
-  'walker-1.png',
-  'walker-2.png',
-  'walker-squash.png',
-  'bat-1.png',
-  'bat-2.png',
-  'heart-full.png',
-  'heart-empty.png',
-  'dash-bar-empty.png',
-  'dash-bar-full.png',
-  'target-arrow.png',
-  'jump.wav',
-  'collect.wav',
-  'clear.wav',
-  'hurt.wav',
-  'stomp.wav',
-  'dash.wav',
-  'warn.wav',
-  'gameover.wav',
-  'start.wav',
-  'land.wav',
-];
-
 const table = document.getElementById('list');
-let done = 0, bad = 0;
+let total = 0, bad = 0;
 
-function finish(cell, ok, note) {
-  cell.textContent = ok ? '✅ ' + note : '❌ 불러오지 못함';
-  cell.className = ok ? 'ok' : 'bad';
-  done++;
+function row(ok, title, note) {
+  total++;
   if (!ok) bad++;
-  if (done === files.length) {
-    document.getElementById('summary').innerHTML = bad === 0
-      ? `<span class="ok">모두 ${files.length}개 잘 불러왔어요.</span>`
-      : `<span class="bad">${files.length}개 중 ${bad}개를 불러오지 못했어요. 파일 이름과 assets 폴더를 확인해 주세요.</span>`;
+  const r = table.insertRow();
+  r.insertCell().textContent = ok ? '✅' : '❌';
+  const c = r.insertCell();
+  c.appendChild(document.createTextNode(title));
+  if (note) {
+    const n = document.createElement('div');
+    n.className = 'note';
+    n.textContent = note;
+    c.appendChild(n);
   }
+  c.className = ok ? 'ok' : 'bad';
 }
 
-for (const name of files) {
-  const src = '../assets/' + name;
-  const row = table.insertRow();
-  const preview = row.insertCell();
-  row.insertCell().textContent = name;
-  const status = row.insertCell();
-  status.textContent = '…';
+function same(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
 
-  if (name.endsWith('.png')) {
-    const img = new Image();
-    img.onload = () => finish(status, true, `${img.naturalWidth}×${img.naturalHeight}`);
-    img.onerror = () => finish(status, false);
-    img.src = src;
-    preview.appendChild(img);
+// 최근 평일 (오늘이 평일이면 오늘) — 급식 모양을 보려고
+function recentWeekday() {
+  const d = new Date();
+  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1);
+  return d;
+}
+
+async function run() {
+  table.replaceChildren();
+  total = 0; bad = 0;
+  document.getElementById('summary').textContent = '확인하는 중…';
+
+  // 1. 파일
+  const loaded = typeof parseDishes === 'function' && typeof getMeals === 'function';
+  row(loaded, 'meal.js 불러오기', loaded ? '앱이 쓰는 함수가 모두 있어요.' : '../meal.js 를 불러오지 못했어요.');
+  if (!loaded) return finish();
+
+  // 2. 메뉴 나누기
+  const cases = [
+    ['궁중비빔밥/볶음고추장 (5.6.16)<br/>달걀실파국1 (1)<br/>귤 ',
+      [{ name: '궁중비빔밥/볶음고추장', allergies: [5, 6, 16] }, { name: '달걀실파국1', allergies: [1] }, { name: '귤', allergies: [] }]],
+    ['치즈크러스트피자(수제) (1.2.5.6.13.16)',
+      [{ name: '치즈크러스트피자(수제)', allergies: [1, 2, 5, 6, 13, 16] }]],
+    ['우유 2.<br>현미밥', [{ name: '우유', allergies: [2] }, { name: '현미밥', allergies: [] }]],
+    ['', []],
+  ];
+  cases.forEach(([input, want], i) => {
+    const got = parseDishes(input);
+    row(same(got, want), `메뉴 나누기 ${i + 1}`, same(got, want) ? JSON.stringify(got) : `기대: ${JSON.stringify(want)} / 실제: ${JSON.stringify(got)}`);
+  });
+
+  // 3. 날짜
+  const t = todayInfo(new Date(2026, 10, 14));
+  row(t.ymd === '20261114' && t.label === '11월 14일 (토)', '날짜 모양', `${t.ymd} · ${t.label}`);
+
+  // 4. 학교 정하기
+  let school = null;
+  try { school = JSON.parse(localStorage.getItem('meal-school')); } catch (e) {}
+  const q = document.getElementById('q').value.trim() || new URLSearchParams(location.search).get('q');
+  if (q) {
+    try {
+      const found = await findSchools(q);
+      row(found.length > 0, '학교 찾기 API', found.length ? `${found.length}곳 찾음 (첫 번째: ${found[0].region} · ${found[0].kind})` : '찾은 학교가 없어요. 이름을 확인해 주세요.');
+      if (found.length) school = found[0];
+    } catch (e) {
+      row(false, '학교 찾기 API', e.message);
+    }
+  } else if (school) {
+    row(true, '고른 학교', `앱에서 고른 학교를 써요 (${school.region})`);
   } else {
-    const audio = new Audio();
-    audio.preload = 'auto';
-    audio.oncanplaythrough = () => { if (!audio.checked) { audio.checked = true; finish(status, true, `${audio.duration.toFixed(2)}초`); } };
-    audio.onerror = () => finish(status, false);
-    audio.src = src;
-    const button = document.createElement('button');
-    button.textContent = '▶';
-    button.onclick = () => { audio.currentTime = 0; audio.play(); };
-    preview.appendChild(button);
+    row(false, '학교', '앱에서 고른 학교가 없어요. 위에 학교 이름을 넣고 "다시 확인"을 눌러 주세요.');
+    return finish();
   }
+
+  // 5. 급식 API
+  if (school) {
+    const todayYmd = todayInfo().ymd;
+    try {
+      const meals = await getMeals(school, todayYmd);
+      row(true, '오늘 급식 API', meals.length ? `${meals.map(m => m.meal + ' ' + m.dishes.length + '가지').join(', ')}` : '답은 왔고, 오늘은 급식이 없어요 → 앱은 "오늘은 급식이 없습니다"를 보여 줘요.');
+    } catch (e) {
+      row(false, '오늘 급식 API', e.message);
+    }
+    const wd = todayInfo(recentWeekday());
+    try {
+      const meals = await getMeals(school, wd.ymd);
+      const dishes = meals.flatMap(m => m.dishes);
+      row(true, `최근 평일 급식 API (${wd.label})`, dishes.length ? dishes.map(d => d.name + (d.allergies.length ? ' [' + d.allergies.join('.') + ']' : '')).join(' / ') : '이날도 급식 정보가 없어요 (방학·휴일일 수 있어요).');
+    } catch (e) {
+      row(false, `최근 평일 급식 API (${wd.label})`, e.message);
+    }
+  }
+
+  // 6. 못 받아 올 때 까닭 보여 주기
+  try {
+    await askNeis('없는서비스', {});
+    row(false, '오류일 때 까닭', '오류가 나야 하는데 나지 않았어요.');
+  } catch (e) {
+    row(e.message.length > 0, '오류일 때 까닭', `앱이 보여 줄 글: ${e.message}`);
+  }
+  // 끝내 답하지 않는 가짜 서버로 바꿔서 시험한다
+  const realFetch = window.fetch;
+  window.fetch = (url, opts) => new Promise((resolve, reject) => {
+    opts.signal.addEventListener('abort', () => reject(new DOMException('멈춤', 'AbortError')));
+  });
+  try {
+    await askNeis('schoolInfo', { SCHUL_NM: '확인용' }, 300);
+    row(false, '시간 초과일 때 까닭', '시간 초과가 나야 하는데 나지 않았어요.');
+  } catch (e) {
+    row(e.message.includes('초 안에'), '시간 초과일 때 까닭', `앱이 보여 줄 글: ${e.message}`);
+  } finally {
+    window.fetch = realFetch;
+  }
+  // 인터넷이 끊긴 것처럼 시험한다
+  window.fetch = () => Promise.reject(new TypeError('Failed to fetch'));
+  try {
+    await askNeis('schoolInfo', { SCHUL_NM: '확인용' });
+    row(false, '인터넷이 끊겼을 때 까닭', '오류가 나야 하는데 나지 않았어요.');
+  } catch (e) {
+    row(e.message.includes('인터넷'), '인터넷이 끊겼을 때 까닭', `앱이 보여 줄 글: ${e.message}`);
+  } finally {
+    window.fetch = realFetch;
+  }
+
+  finish();
 }
+
+function finish() {
+  document.getElementById('summary').innerHTML = bad === 0
+    ? `<span class="ok">모두 ${total}개 통과했어요.</span>`
+    : `<span class="bad">${total}개 중 ${bad}개가 실패했어요. 아래 ❌ 줄을 확인해 주세요.</span>`;
+  document.body.dataset.done = '1';
+}
+
+document.getElementById('form').onsubmit = (event) => { event.preventDefault(); run(); };
+run();
 </script>
 </body>
 </html>
