@@ -20,6 +20,18 @@
   button { font: inherit; font-size: 16px; cursor: pointer; }
   .big { padding: 10px 20px; border: 0; border-radius: 8px; background: #4da3ff; color: #08121f; font-weight: bold; }
   .ghost { padding: 8px 14px; border: 1px solid #6b7896; border-radius: 8px; background: transparent; color: #fff; }
+  .table-wrap { overflow-x: auto; }
+  #ranking-table { border-collapse: collapse; width: 100%; min-width: 260px; }
+  #ranking-table th, #ranking-table td, .stage-rank td { padding: 6px 8px; border-bottom: 1px solid #3a4560; text-align: left; overflow-wrap: anywhere; }
+  #ranking-table th { color: #aab4cc; font-size: 13px; font-weight: normal; }
+  #ranking-table th, #ranking-table td, .stage-rank td { white-space: nowrap; }
+  #ranking-table td:nth-child(2), #ranking-table th:nth-child(2), .stage-rank td:nth-child(2) { white-space: normal; width: 100%; }
+  @media (max-width: 420px) { #ranking-table th, #ranking-table td { padding: 6px 4px; } }
+  #ranking-table tr.me td, .stage-rank tr.me td { background: #2f3d63; font-weight: bold; }
+  h2.sub { font-size: 18px; margin: 24px 0 8px; }
+  .stage-rank { margin: 0 0 14px; }
+  .stage-rank h3 { margin: 0 0 4px; font-size: 16px; }
+  .stage-rank table { border-collapse: collapse; width: 100%; }
   .io-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
   #io-msg { margin: 0 0 12px; font-size: 15px; }
   #io-msg.good { color: #9be6a6; }
@@ -89,8 +101,12 @@
       <input id="name-input" maxlength="12" placeholder="별명" autocomplete="off" aria-label="별명">
       <button class="big">시작</button>
     </form>
+    <p class="note" id="owners-note" hidden></p>
     <p class="note">다른 기기에서 쓰던 기록이 있나요? 파일로 옮겨 올 수 있어요.</p>
-    <button class="ghost io-import" type="button">기록 불러오기</button>
+    <div class="io-row">
+      <button class="ghost io-import" type="button">기록 불러오기</button>
+      <button class="ghost" id="newowner-cancel" type="button" hidden>취소 (원래 주인으로 돌아가기)</button>
+    </div>
   </section>
 
   <section id="select-screen" hidden>
@@ -98,11 +114,24 @@
     <p id="select-note" class="note"></p>
     <div id="cards"></div>
     <div class="io-row">
+      <button class="ghost" id="ranking-btn">주인별 랭킹</button>
+      <button class="ghost" id="newowner-btn">새 주인으로 시작</button>
+    </div>
+    <div class="io-row">
       <button class="ghost" id="rename">이름 바꾸기</button>
       <button class="ghost" id="export-btn">기록 내보내기</button>
       <button class="ghost io-import" type="button">기록 불러오기</button>
     </div>
     <p class="note">기록 내보내기는 기록을 파일로 저장해요. 기기를 바꾸거나 브라우저를 비워도 불러와서 이어 할 수 있어요.</p>
+  </section>
+
+  <section id="ranking-screen" hidden>
+    <h2>주인별 랭킹</h2>
+    <p class="note" id="ranking-note"></p>
+    <div class="table-wrap"><table id="ranking-table"></table></div>
+    <h2 class="sub">스테이지별 가장 빠른 시간</h2>
+    <div id="ranking-stages"></div>
+    <button class="ghost" id="ranking-back">스테이지 고르기</button>
   </section>
 
   <section id="play-screen" hidden>
@@ -124,14 +153,16 @@
 <script src="save.js"></script>
 <script src="physics.js"></script>
 <script src="stages.js"></script>
+<script src="ranking.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 let save = loadSave();
 
 // ---------- 화면 바꾸기 ----------
 function show(name) {
-  for (const s of ['name', 'select', 'play']) $(s + '-screen').hidden = s !== name;
+  for (const s of ['name', 'select', 'play', 'ranking']) $(s + '-screen').hidden = s !== name;
   if (name === 'play') { $('io-msg').hidden = true; $('import-panel').hidden = true; }
+  if (name === 'name') refreshNameScreen();
   if (name !== 'play') running = false;
   refreshHeader();
 }
@@ -152,8 +183,12 @@ $('name-form').onsubmit = (e) => {
   e.preventDefault();
   const name = cleanName($('name-input').value);
   if (!name) { $('name-input').focus(); return; }
-  save = setOwner(name);
+  // 기록이 빈 상태에서 이 기기에 보관된 주인 이름을 쓰면 그 주인의 기록으로 이어 한다
+  const back = !save.owner && Object.keys(save.stages).length === 0 ? takeArchivedOwner(name) : null;
+  save = back || setOwner(name);
+  prevOwnerForNew = null;
   showSelect();
+  if (back) ioMsg(`${name}의 기록으로 이어 해요.`, false);
 };
 
 $('rename').onclick = () => {
@@ -164,6 +199,7 @@ $('rename').onclick = () => {
 
 // ---------- 스테이지 고르기 ----------
 function showSelect() {
+  prevOwnerForNew = null;   // 스테이지 고르는 화면에 왔으면 "새 주인" 취소 표시는 끝난 것
   show('select');
   $('select-title').textContent = save.owner + '의 기록';
   const cleared = STAGES.filter(s => stageRecord(save, s.id)).length;
@@ -454,6 +490,92 @@ $('import-no').onclick = () => {
   $('import-panel').hidden = true;
   ioMsg('취소했어요. 지금 기록은 그대로예요.', false);
 };
+
+// ---------- 주인별 랭킹 · 새 주인 ----------
+// 이 기기에서 쓴 주인끼리의 랭킹이다. 계산은 ranking.js, 주인을 보관하는 건 save.js.
+let prevOwnerForNew = null;   // "새 주인으로 시작"을 눌렀을 때의 원래 주인 (취소하면 되돌린다)
+
+function refreshNameScreen() {
+  const names = save.owner ? [] : archivedNames();
+  $('owners-note').hidden = names.length === 0;
+  $('owners-note').textContent = names.length ? `이 기기에 기록이 있는 주인: ${names.join(', ')} · 같은 이름을 쓰면 그 주인의 기록으로 이어 해요.` : '';
+  $('newowner-cancel').hidden = prevOwnerForNew === null;
+}
+
+$('newowner-btn').onclick = () => {
+  const prev = save.owner;
+  const r = startNewOwner();
+  save = r.save;
+  prevOwnerForNew = prev || null;
+  $('name-input').value = '';
+  show('name');
+  $('name-input').focus();
+  ioMsg(prev ? `${prev}의 기록은 보관했어요. 새 주인의 이름을 정해 주세요.` : '새 주인의 이름을 정해 주세요.', !r.saved);
+};
+
+$('newowner-cancel').onclick = () => {
+  const back = prevOwnerForNew ? takeArchivedOwner(prevOwnerForNew) : null;
+  if (back) save = back;
+  prevOwnerForNew = null;
+  showSelect();
+  ioMsg('취소했어요. 원래 주인의 기록 그대로예요.', false);
+};
+
+function cell(row, text, tag) {
+  const c = document.createElement(tag || 'td');
+  c.textContent = text;
+  row.append(c);
+}
+
+function showRanking() {
+  const r = buildRanking(loadSave(), loadOwners(), STAGES);
+  show('ranking');
+  $('ranking-note').textContent = '이 기기에서 쓴 주인끼리의 랭킹이에요. 별 합계가 많은 순서이고, 같으면 코인 합계가 많은 쪽이 앞이에요. '
+    + (r.overall.length < 2 ? '주인이 한 명뿐이에요. "새 주인으로 시작"으로 다른 주인을 만들면 비교할 수 있어요. ' : '')
+    + '다른 기기 사람과의 랭킹은 로그인과 보관함을 붙인 뒤에 만들 수 있어요.';
+  const table = $('ranking-table');
+  table.replaceChildren();
+  const head = table.insertRow();
+  for (const t of ['순위', '주인', '별', '코인', '깬 수']) cell(head, t, 'th');
+  for (const o of r.overall) {
+    const row = table.insertRow();
+    if (o.current) row.className = 'me';
+    cell(row, o.cleared ? `${o.rank}위` : '-');
+    cell(row, o.name + (o.current ? ' (지금)' : ''));
+    cell(row, o.cleared ? `★ ${o.stars}` : '-');
+    cell(row, o.cleared ? `🪙 ${o.coins}` : '-');
+    cell(row, `${o.cleared}/${STAGES.length}`);
+  }
+  const box = $('ranking-stages');
+  box.replaceChildren();
+  for (const st of r.perStage) {
+    const wrap = document.createElement('div');
+    wrap.className = 'stage-rank';
+    const h = document.createElement('h3');
+    h.textContent = `스테이지 ${st.id} · ${st.name}`;
+    wrap.append(h);
+    if (st.rows.length === 0) {
+      const p = document.createElement('div');
+      p.className = 'note';
+      p.textContent = '아직 기록이 없어요';
+      wrap.append(p);
+    } else {
+      const t = document.createElement('table');
+      for (const o of st.rows) {
+        const row = t.insertRow();
+        if (o.current) row.className = 'me';
+        cell(row, `${o.rank}위`);
+        cell(row, o.name + (o.current ? ' (지금)' : ''));
+        cell(row, `${formatTime(o.time)}초`);
+      }
+      wrap.append(t);
+    }
+    box.append(wrap);
+  }
+}
+
+$('ranking-btn').onclick = showRanking;
+$('ranking-back').onclick = showSelect;
 
 // ---------- 시작 ----------
 if (save.owner) showSelect(); else show('name');

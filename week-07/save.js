@@ -162,3 +162,76 @@ function replaceSave(save) {
   const saved = writeSave(clean);
   return { save: clean, saved };
 }
+
+// ---------- 주인 보관 (주인별 랭킹) ----------
+// 지금 주인의 기록은 위의 SAVE_KEY 에 있고, "새 주인으로 시작"으로 밀려난 다른 주인들의 기록은 여기에 보관한다.
+// 보관 모양: { v: 1, owners: { "이름": { owner: "이름", stages: {...} } } }
+const OWNERS_KEY = 'platformer-owners';
+let memoryOwners = null;
+
+function cleanOwners(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object' || !raw.owners || typeof raw.owners !== 'object') return out;
+  for (const name of Object.keys(raw.owners)) {
+    if (!name || cleanName(name) !== name) continue;   // 다듬은 이름과 다르면 버린다
+    const item = raw.owners[name];
+    const s = cleanSave({ owner: name, stages: item && item.stages });
+    out[name] = { owner: name, stages: s.stages };
+  }
+  return out;
+}
+
+function loadOwners() {
+  let text;
+  try {
+    text = localStorage.getItem(OWNERS_KEY);
+  } catch (e) {
+    storageOk = false;
+    return memoryOwners ? cleanOwners({ owners: memoryOwners }) : {};
+  }
+  if (text === null) return !storageOk && memoryOwners ? cleanOwners({ owners: memoryOwners }) : {};
+  try {
+    return cleanOwners(JSON.parse(text));
+  } catch (e) {
+    return {};
+  }
+}
+
+function writeOwners(owners) {
+  memoryOwners = owners;
+  try {
+    localStorage.setItem(OWNERS_KEY, JSON.stringify({ v: 1, owners }));
+    return true;
+  } catch (e) {
+    storageOk = false;
+    return false;
+  }
+}
+
+function archivedNames() {
+  return Object.keys(loadOwners());
+}
+
+// "새 주인으로 시작": 지금 주인의 기록을 보관함에 넣고, 지금 기록은 빈 기록으로 비운다
+function startNewOwner() {
+  const cur = loadSave();
+  if (!cur.owner) return { archived: null, save: cur, saved: true };
+  const owners = loadOwners();
+  owners[cur.owner] = { owner: cur.owner, stages: cur.stages };
+  const ok1 = writeOwners(owners);
+  const empty = emptySave();
+  const ok2 = writeSave(empty);
+  return { archived: cur.owner, save: empty, saved: ok1 && ok2 };
+}
+
+// 보관된 주인을 지금 기록으로 꺼낸다 (같은 이름을 다시 쓰면 그 주인으로 이어 한다). 없으면 null.
+function takeArchivedOwner(name) {
+  const n = cleanName(name);
+  const owners = loadOwners();
+  if (!n || !owners[n]) return null;
+  const next = cleanSave({ owner: n, stages: owners[n].stages });
+  delete owners[n];
+  writeOwners(owners);
+  writeSave(next);
+  return next;
+}
