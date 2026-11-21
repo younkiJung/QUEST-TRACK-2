@@ -119,6 +119,27 @@ async function run() {
     localStorage.setItem(SAVE_KEY, JSON.stringify({ owner: '<b>x</b>', stages: { '1': { cleared: true, coins: -5 }, 'abc': { cleared: true, coins: 3 }, '2': { cleared: false, coins: 9 } } }));
     const odd = loadSave();
     row(Object.keys(odd.stages).length === 1 && odd.stages['1'].coins === 0, '이상한 기록 걸러내기', `남은 스테이지 ${Object.keys(odd.stages).join(',')} · 음수 코인은 0`);
+
+    // 최고기록 (가장 빠른 시간, 1/100초 단위)
+    localStorage.removeItem(SAVE_KEY);
+    const t1 = recordClear(1, 5, 1234);
+    row(t1.newBest && t1.prevTime === null && loadSave().stages['1'].time === 1234, '처음 깨면 그 시간이 최고기록', '12.34초 저장');
+    const t2 = recordClear(1, 5, 1500);
+    row(!t2.newBest && t2.bestTime === 1234 && loadSave().stages['1'].time === 1234, '더 느리면 최고기록 그대로', '15.00초로 깼지만 12.34초 유지');
+    const t3 = recordClear(1, 5, 1100);
+    row(t3.newBest && t3.prevTime === 1234 && loadSave().stages['1'].time === 1100, '더 빠르면 최고기록 바꿈', '12.34초 → 11.00초');
+    const t4 = recordClear(1, 5, 1100);
+    row(!t4.newBest && loadSave().stages['1'].time === 1100, '같은 시간은 새 기록이 아니에요', '11.00초 = 11.00초');
+    const t5 = recordClear(1, 5);
+    row(!t5.newBest && loadSave().stages['1'].time === 1100, '시간을 안 주면 기록을 건드리지 않아요', '코인만 저장할 때도 시간이 지워지지 않아요');
+    const t6 = recordClear(2, 4, 900);
+    row(loadSave().stages['1'].time === 1100 && loadSave().stages['2'].time === 900, '스테이지마다 따로 저장', '1번 11.00초 · 2번 9.00초');
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 1, owner: '옛', stages: { '1': { cleared: true, coins: 2 } } }));
+    const old = loadSave();
+    row(old.stages['1'].time === undefined && recordClear(1, 2, 3000).newBest, '시간이 없는 옛 기록', '읽을 수 있고, 다음에 깨면 그 시간이 최고기록이 돼요.');
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 1, owner: 'x', stages: { '1': { cleared: true, coins: 1, time: -5 }, '2': { cleared: true, coins: 1, time: 'abc' }, '3': { cleared: true, coins: 1, time: 12.5 } } }));
+    const badTime = loadSave();
+    row(['1', '2', '3'].every(k => badTime.stages[k] && badTime.stages[k].time === undefined), '이상한 시간 걸러내기', '음수·글자·소수는 버리고 나머지 기록은 살려요.');
   } finally {
     try { backup === null ? localStorage.removeItem(SAVE_KEY) : localStorage.setItem(SAVE_KEY, backup); } catch (e) {}
   }
@@ -194,6 +215,36 @@ async function run() {
       } catch (e) {
         skip(`화면 폭 ${label}`, '게임 화면을 이 페이지 안에서 열 수 없었어요: ' + e.message);
       }
+    }
+  }
+
+  // 6. 게임 화면에서 최고기록 (게임을 실제로 열어 깬 것처럼 만들어 봄. 진짜 기록은 빌려 쓰고 돌려놓음)
+  if (html !== null) {
+    let f = null, ls = null, saved = null;
+    try {
+      f = await loadFrame('../index.html', 800);
+      const win = f.contentWindow;
+      ls = win.localStorage;
+      saved = ls.getItem(SAVE_KEY);
+      ls.removeItem(SAVE_KEY);
+      row(win.formatTime(1234) === '12.34' && win.formatTime(500) === '5.00' && win.formatTime(6005) === '60.05', '시간 글 모양', '1234 → 12.34 · 500 → 5.00 · 6005 → 60.05');
+      const clearOnce = (frames) => win.eval(`save = loadSave(); startStage(STAGES[0]); run.t = ${frames}; finish(); document.getElementById('clear').innerText`);
+      const a = clearOnce(740);      // 12.33초 (740/60)
+      row(a.includes('NEW!') && a.includes('첫 기록') && a.includes('12.33'), '처음 깬 화면에 NEW!', a.replace(/\s+/g, ' '));
+      const b = clearOnce(900);      // 15.00초 — 더 느림
+      row(!b.includes('NEW!') && b.includes('15.00') && b.includes('12.33'), '더 느리면 NEW! 가 안 떠요', b.replace(/\s+/g, ' '));
+      const c = clearOnce(600);      // 10.00초 — 더 빠름
+      row(c.includes('NEW!') && c.includes('이전 12.33') && c.includes('10.00'), '더 빠르면 NEW! 와 이전 기록', c.replace(/\s+/g, ' '));
+      win.eval('showSelect()');
+      const card = f.contentDocument.querySelector('#cards .card').innerText;
+      row(card.includes('최고 10.00초'), '스테이지 고르는 화면에 최고기록', card.replace(/\s+/g, ' '));
+      const stored = JSON.parse(ls.getItem(SAVE_KEY));
+      row(stored.stages['1'].time === 1000, '브라우저에 저장된 시간', `stages.1.time = ${stored.stages['1'].time} (1/100초)`);
+    } catch (e) {
+      skip('게임 화면에서 최고기록', '게임 화면을 이 페이지 안에서 열 수 없었어요: ' + e.message);
+    } finally {
+      try { if (ls) { saved === null ? ls.removeItem(SAVE_KEY) : ls.setItem(SAVE_KEY, saved); } } catch (e) {}
+      if (f) f.remove();
     }
   }
 

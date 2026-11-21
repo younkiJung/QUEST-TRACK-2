@@ -143,7 +143,7 @@ function showSelect() {
     title.textContent = `스테이지 ${s.id} · ${s.name}`;
     const info = document.createElement('span');
     info.textContent = !open ? '🔒 앞 스테이지를 먼저 깨요'
-      : rec ? `✅ 깼어요 · 코인 ${rec.coins}/${s.coins.length}` : '아직 안 깼어요';
+      : rec ? `✅ 깼어요 · 코인 ${rec.coins}/${s.coins.length}` + (rec.time ? ` · 최고 ${formatTime(rec.time)}초` : '') : '아직 안 깼어요';
     b.append(title, info);
     b.onclick = () => startStage(s);
     box.append(b);
@@ -179,9 +179,14 @@ function startStage(stage) {
   if (!running) { running = true; last = performance.now(); acc = 0; requestAnimationFrame(frame); }
 }
 
+// 1/100초 정수 → "12.34" (시간은 프레임 수로 재서 컴퓨터가 느려도 같다: 60프레임 = 1초)
+function formatTime(cs) {
+  return (cs / 100).toFixed(2);
+}
+
 function updateHud() {
   const n = run.got.filter(Boolean).length;
-  $('hud').textContent = `스테이지 ${run.stage.id} · ${run.stage.name} · 🪙 ${n}/${run.stage.coins.length}`;
+  $('hud').textContent = `스테이지 ${run.stage.id} · ${run.stage.name} · 🪙 ${n}/${run.stage.coins.length} · ⏱ ${(run.t / 60).toFixed(1)}초`;
 }
 
 function update() {
@@ -195,7 +200,7 @@ function update() {
   if (p.dead) { run.player = newPlayer(st); return; }   // 떨어지면 처음 자리로 (먹은 코인은 그대로)
   let changed = false;
   st.coins.forEach((c, i) => { if (!run.got[i] && touchesCoin(p, c)) { run.got[i] = true; changed = true; } });
-  if (changed) updateHud();
+  if (changed || run.t % 6 === 0) updateHud();
   if (touchesGoal(p, st.goal)) finish();
 }
 
@@ -203,7 +208,8 @@ function finish() {
   run.done = true;
   const got = run.got.filter(Boolean).length;
   const total = run.stage.coins.length;
-  const r = recordClear(run.stage.id, got);
+  const cs = Math.round(run.t / 60 * 100);   // 걸린 시간 (1/100초)
+  const r = recordClear(run.stage.id, got, cs);
   save = r.save;
   refreshHeader();
   const box = $('clear');
@@ -213,6 +219,12 @@ function finish() {
   const info = document.createElement('div');
   const more = r.firstClear ? '처음 깼어요!' : r.improved ? `코인 기록을 늘렸어요 (이전 ${r.prev}개)` : `기록은 그대로예요 (최고 ${r.save.stages[run.stage.id].coins}개)`;
   info.textContent = `코인 ${got}/${total} · ${more}`;
+  const timeBox = document.createElement('div');
+  timeBox.id = 'clear-time';
+  timeBox.textContent = `⏱ ${formatTime(cs)}초 · ` + (r.newBest
+    ? (r.prevTime ? `NEW! 최고기록 (이전 ${formatTime(r.prevTime)}초)` : 'NEW! 첫 기록')
+    : `최고기록은 ${formatTime(r.bestTime || cs)}초예요`);
+  if (r.newBest) timeBox.style.cssText = 'color:#ffd84d;font-weight:bold';
   const row = document.createElement('div');
   row.className = 'row';
   const next = STAGES.find(s => s.id === run.stage.id + 1);
@@ -220,7 +232,7 @@ function finish() {
   if (next) row.append(mk('다음 스테이지', () => startStage(next), 'big'));
   row.append(mk('다시 하기', () => startStage(run.stage), next ? 'ghost' : 'big'));
   row.append(mk('스테이지 고르기', showSelect, 'ghost'));
-  box.append(h, info);
+  box.append(h, info, timeBox);
   if (!next) { const all = document.createElement('div'); all.textContent = '마지막 스테이지까지 모두 깼어요!'; box.append(all); }
   box.append(row);
   if (!r.saved) { const w = document.createElement('div'); w.className = 'note'; w.textContent = '이 브라우저가 저장을 막고 있어서 기록이 남지 않아요.'; box.append(w); }
