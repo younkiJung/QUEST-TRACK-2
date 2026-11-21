@@ -184,6 +184,42 @@ async function run() {
     row(bot.ok, `스테이지 ${st.id} 깰 수 있어요`, bot.ok ? `로봇이 깃발까지 갔어요 (${(bot.frames / 60).toFixed(1)}초, 코인 ${bot.coins}/${st.coins.length})` : `로봇이 깃발에 닿지 못했어요 (코인 ${bot.coins}/${st.coins.length})`);
   }
 
+  // 4-2. 스테이지 3개가 점점 어려워지는지 (난이도를 숫자로 비교)
+  row(STAGES.length === 3, '스테이지는 3개', `지금 ${STAGES.length}개`);
+  const stats = STAGES.map(st => {
+    // 구멍: 시작~깃발 사이에서 어떤 발판 밑에도 들지 않는 가로 구간
+    const spans = st.platforms.map(r => [r.x, r.x + r.w]).sort((a, b) => a[0] - b[0]);
+    let reach = 0; const pits = [];
+    for (const [a, b] of spans) { if (a > reach) pits.push(a - reach); reach = Math.max(reach, b); }
+    const floating = st.platforms.filter(r => r.h === 20).map(r => r.w);
+    return { length: st.width, coins: st.coins.length, pits: pits.length, maxPit: Math.max(0, ...pits),
+             totalPit: pits.reduce((s, v) => s + v, 0), narrow: Math.min(...floating), seconds: tryBot(st).frames / 60 };
+  });
+  const rising = (key, label, unit, sign = 1) => {
+    const v = stats.map(s => s[key]);
+    const ok = v.every((x, i) => i === 0 || (x - v[i - 1]) * sign > 0);
+    row(ok, `${label} ${sign > 0 ? '늘어나요' : '줄어들어요'}`, v.map(x => (Number.isInteger(x) ? x : x.toFixed(1)) + unit).join(sign > 0 ? ' < ' : ' > '));
+  };
+  rising('length', '스테이지 길이가', '');
+  rising('coins', '코인 개수가', '개');
+  rising('pits', '구멍 개수가', '개');
+  rising('maxPit', '가장 넓은 구멍이', '');
+  rising('totalPit', '구멍 전체 폭이', '');
+  rising('narrow', '가장 좁은 떠 있는 발판이', '', -1);
+  rising('seconds', '로봇이 깨는 데 걸리는 시간이', '초');
+  const levels = STAGES.map(st => st.level);
+  row(same(levels, [1, 2, 3]) && STAGES.every(st => typeof st.hint === 'string' && st.hint.length > 0 && typeof st.name === 'string' && st.name.length > 0),
+    '난이도 표시와 설명이 있어요', `level ${levels.join(', ')} · 모든 스테이지에 이름과 한 줄 설명이 있어요.`);
+  const shapeOk = STAGES.every(st => {
+    const startFree = !st.platforms.some(r => overlaps({ x: st.start.x, y: st.start.y }, r));
+    const startStand = st.platforms.some(r => st.start.x >= r.x && st.start.x + PHYS.W <= r.x + r.w && r.y - (st.start.y + PHYS.H) >= 0 && r.y - (st.start.y + PHYS.H) <= 30);
+    const goalStand = st.platforms.some(r => st.goal.x >= r.x && st.goal.x + st.goal.w <= r.x + r.w && r.y === st.goal.y + st.goal.h);
+    const goalInside = st.goal.x + st.goal.w <= st.width;
+    const coinsDistinct = new Set(st.coins.map(c => c.x + ',' + c.y)).size === st.coins.length;
+    return startFree && startStand && goalStand && goalInside && coinsDistinct;
+  });
+  row(shapeOk, '스테이지 데이터 모양', '시작 자리는 발판 바로 위(30 안)에 있고, 깃발은 발판 위·스테이지 안에 있고, 코인이 겹치지 않아요.');
+
   // 5. 게임 화면 (파일 내용과 모양)
   let html = null;
   try { html = await (await fetch('../index.html')).text(); } catch (e) {}
@@ -238,6 +274,9 @@ async function run() {
       win.eval('showSelect()');
       const card = f.contentDocument.querySelector('#cards .card').innerText;
       row(card.includes('최고 10.00초'), '스테이지 고르는 화면에 최고기록', card.replace(/\s+/g, ' '));
+      const cardTexts = [...f.contentDocument.querySelectorAll('#cards .card')].map(c => c.innerText.replace(/\s+/g, ' '));
+      row(cardTexts.length === 3 && cardTexts.every((t, i) => t.includes('난이도 ' + '★'.repeat(i + 1) + '☆'.repeat(2 - i)) && t.includes(STAGES[i].hint)),
+        '스테이지 카드에 난이도와 설명', cardTexts.map(t => t.slice(0, 40)).join(' / '));
       const stored = JSON.parse(ls.getItem(SAVE_KEY));
       row(stored.stages['1'].time === 1000, '브라우저에 저장된 시간', `stages.1.time = ${stored.stages['1'].time} (1/100초)`);
     } catch (e) {

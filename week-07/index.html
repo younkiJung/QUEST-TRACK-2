@@ -27,6 +27,8 @@
   .card.cleared { border-color: #7ee08a; }
   .card:disabled { border-color: #3a4560; background: #1b2236; color: #7f8aa6; cursor: not-allowed; }
   .card b { display: block; font-size: 18px; }
+  .card .level { display: block; margin: 2px 0 6px; font-size: 14px; color: #aab4cc; }
+  .card:disabled .level { color: #6b7896; }
   #play-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
   #hud { font-weight: bold; }
   #wrap { position: relative; margin: 0 auto; }
@@ -144,7 +146,10 @@ function showSelect() {
     const info = document.createElement('span');
     info.textContent = !open ? '🔒 앞 스테이지를 먼저 깨요'
       : rec ? `✅ 깼어요 · 코인 ${rec.coins}/${s.coins.length}` + (rec.time ? ` · 최고 ${formatTime(rec.time)}초` : '') : '아직 안 깼어요';
-    b.append(title, info);
+    const level = document.createElement('span');
+    level.className = 'level';
+    level.textContent = `난이도 ${'★'.repeat(s.level)}${'☆'.repeat(3 - s.level)} · ${s.hint}`;
+    b.append(title, level, info);
     b.onclick = () => startStage(s);
     box.append(b);
   }
