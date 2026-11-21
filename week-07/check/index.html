@@ -607,6 +607,99 @@ async function run() {
     }
   }
 
+  // 9. 디자인 (하늘색 중심 · 진행시간이 가장 크게 · 폰에서 글자 읽기). 게임 화면을 실제로 열어 글자 크기와 색 대비를 잼.
+  if (html !== null) {
+    const parseColor = (c) => { const m = c.match(/rgba?\(([^)]+)\)/); if (!m) return null; const p = m[1].split(',').map(parseFloat); return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 }; };
+    const lum = ({ r, g, b }) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+    const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+    const hue = ({ r, g, b }) => { r /= 255; g /= 255; b /= 255; const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn; if (!d) return { h: 0, s: 0 }; let h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; h = (h * 60 + 360) % 360; return { h, s: d / (1 - Math.abs(mx + mn - 1)) }; };
+    const label = (el) => el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + (el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\s+/)[0] : '');
+    // 눈에 보이는 글자를 모두 모아 크기와 대비를 잰다
+    const audit = (win, root) => {
+      const out = [];
+      for (const el of root.querySelectorAll('*')) {
+        if (['SCRIPT', 'STYLE', 'CANVAS', 'INPUT', 'OPTION', 'TITLE'].includes(el.tagName)) continue;
+        if (![...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim())) continue;
+        const cs = win.getComputedStyle(el);
+        if (cs.visibility === 'hidden' || el.getClientRects().length === 0) continue;
+        let bg = { r: 255, g: 255, b: 255, a: 1 };
+        for (let e = el; e; e = e.parentElement) { const c = parseColor(win.getComputedStyle(e).backgroundColor); if (c && c.a > 0) { bg = c; break; } }
+        const fg = parseColor(cs.color);
+        const size = parseFloat(cs.fontSize);
+        const bold = parseInt(cs.fontWeight, 10) >= 700;
+        const need = size >= 24 || (size >= 18.66 && bold) ? 3 : 4.5;
+        out.push({ name: label(el), size, ratio: fg ? ratio(fg, bg) : 99, need, el });
+      }
+      return out;
+    };
+    const widths = [[360, '폰 360'], [1280, '컴퓨터 1280']];
+    for (const [width, name] of widths) {
+      let f = null, ls = null, sA = null, sB = null;
+      try {
+        f = await loadFrame('../index.html', width);
+        const win = f.contentWindow, doc = f.contentDocument;
+        ls = win.localStorage; sA = ls.getItem(SAVE_KEY); sB = ls.getItem(OWNERS_KEY);
+        ls.removeItem(SAVE_KEY); ls.removeItem(OWNERS_KEY);
+        const states = {};
+        const snap = (key, code) => { win.eval(code); states[key] = { items: audit(win, doc.body), overflow: doc.documentElement.scrollWidth }; };
+        const good = "save = setOwner('토끼'); recordClear(1, 5, 1000, 3); recordClear(2, 4, 1500, 2); save = loadSave();";
+
+        snap('이름 정하기', "save = loadSave(); show('name');");
+        if (width === 1280) {
+          const hdr = parseColor(win.getComputedStyle(doc.querySelector('header')).backgroundColor);
+          const btn = parseColor(win.getComputedStyle(doc.querySelector('.big')).backgroundColor);
+          const body = parseColor(win.getComputedStyle(doc.body).backgroundColor);
+          const hs = [hdr, btn, body].map(hue);
+          row(hs.every(x => x.h >= 190 && x.h <= 215 && x.s >= 0.45), '중심 색은 하늘색', `위쪽 바 ${Math.round(hs[0].h)}° · 단추 ${Math.round(hs[1].h)}° · 바탕 ${Math.round(hs[2].h)}° (하늘색은 약 190~215°)`);
+        }
+        snap('스테이지 고르기', good + " showSelect();");
+        snap('안내 글(성공)', "ioMsg('기록을 불러왔어요.', false);");
+        snap('안내 글(실패)', "ioMsg('이 게임에서 내보낸 기록 파일이 아니에요. 지금 기록은 그대로예요.', true);");
+        snap('주인별 랭킹', "startNewOwner(); setOwner('고양이'); recordClear(1, 5, 900, 3); save = loadSave(); showRanking();");
+        snap('불러오기 확인 창', "showSelect(); handleImportText(makeExportText({ v: 1, owner: '다람쥐', stages: { '1': { cleared: true, coins: 3, time: 1300, stars: 2 } } }));");
+        win.eval("$('import-panel').hidden = true; $('io-msg').hidden = true;");
+
+        // 플레이 중: 진행시간이 가장 커야 한다
+        snap('플레이 중', good + " startStage(STAGES[1]); run.t = 372; updateHud();");
+        const play = states['플레이 중'].items;
+        const timeEl = play.find(x => x.name === 'span#hud-time');
+        const others = play.filter(x => x.name !== 'span#hud-time').sort((a, b) => b.size - a.size);
+        row(!!timeEl && timeEl.size >= others[0].size * 1.3 && timeEl.size >= (width < 700 ? 40 : 56),
+          `진행시간이 가장 크게 보여요 (${name})`, timeEl ? `진행시간 ${timeEl.size}px · 그다음으로 큰 글자 ${others[0].size}px (${others[0].name})` : '진행시간을 찾지 못했어요');
+
+        // 클리어 화면: 처음 깨는 경우(글이 가장 많은 경우)로 시험
+        snap('클리어 화면', "localStorage.removeItem(SAVE_KEY); save = setOwner('새싹'); startStage(STAGES[0]); run.t = 900; run.got.fill(true); finish();");
+        const clearBox = doc.getElementById('clear');
+        const clearItems = audit(win, clearBox);
+        const big = clearItems.find(x => x.name === 'span.t-big');
+        const restMax = clearItems.filter(x => x.name !== 'span.t-big').sort((a, b) => b.size - a.size)[0];
+        row(!!big && big.size > restMax.size, `클리어 화면에서 걸린 시간이 가장 커요 (${name})`, big ? `걸린 시간 ${big.size}px · 그다음 ${restMax.size}px (${restMax.name})` : '찾지 못했어요');
+        row(clearBox.scrollHeight <= clearBox.clientHeight + 1, `클리어 화면이 스크롤 없이 한 화면에 들어와요 (${name})`, `내용 ${clearBox.scrollHeight}px · 칸 ${clearBox.clientHeight}px`);
+        const btns = [...clearBox.querySelectorAll('button')].map(b => b.getBoundingClientRect());
+        const box = clearBox.getBoundingClientRect();
+        row(btns.length >= 2 && btns.every(r => r.top >= box.top && r.bottom <= box.bottom + 1 && r.left >= box.left && r.right <= box.right + 1), `클리어 화면 단추가 모두 보여요 (${name})`, `단추 ${btns.length}개`);
+
+        // 글자 크기와 대비 (모든 화면)
+        const all = Object.entries(states).flatMap(([st, v]) => v.items.map(x => ({ ...x, st })));
+        const tooSmall = all.filter(x => x.size < 13);
+        const lowContrast = all.filter(x => x.ratio < x.need);
+        const smallest = all.reduce((m, x) => (x.size < m.size ? x : m), all[0]);
+        row(tooSmall.length === 0, `글자가 너무 작지 않아요 (${name})`, tooSmall.length ? '13px보다 작은 글자: ' + tooSmall.slice(0, 4).map(x => `${x.st} ${x.name} ${x.size}px`).join(', ') : `가장 작은 글자 ${smallest.size}px (${smallest.st} · ${smallest.name}) · 확인한 글자 ${all.length}개 · 화면 ${Object.keys(states).length}종`);
+        row(lowContrast.length === 0, `글자와 바탕의 색 대비가 충분해요 (${name})`, lowContrast.length ? '대비가 모자란 글자: ' + lowContrast.slice(0, 4).map(x => `${x.st} ${x.name} ${x.ratio.toFixed(1)}:1`).join(', ') : `모든 글자 4.5:1 이상 (큰 글자 3:1)`);
+        const wide = Object.entries(states).filter(([, v]) => v.overflow > width);
+        row(wide.length === 0, `화면이 옆으로 잘리지 않아요 (${name})`, wide.length ? wide.map(([k, v]) => `${k} ${v.overflow}px`).join(', ') : `모든 화면의 내용 폭이 ${width}px 이하`);
+      } catch (e) {
+        skip(`디자인 확인 (${name})`, '게임 화면을 이 페이지 안에서 열 수 없었어요: ' + e.message);
+      } finally {
+        try { if (ls) {
+          sA === null ? ls.removeItem(SAVE_KEY) : ls.setItem(SAVE_KEY, sA);
+          sB === null ? ls.removeItem(OWNERS_KEY) : ls.setItem(OWNERS_KEY, sB);
+        } } catch (e) {}
+        if (f) f.remove();
+      }
+    }
+  }
+
   finish();
 }
 

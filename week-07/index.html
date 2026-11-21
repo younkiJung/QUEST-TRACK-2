@@ -5,70 +5,119 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>내 플랫폼 게임</title>
 <style>
+  /* 하늘색 게임 디자인. 중심 색은 하늘색(--sky), 글자는 진한 남색(--ink)이라 밝은 바탕에서도 잘 읽혀요. */
+  :root {
+    --sky: #38b6ff; --sky-soft: #bfe8ff; --sky-deep: #0b6fc0; --sky-night: #0a4f8c;
+    --ink: #0b2a4a; --ink-soft: #2b5378; --sun: #ffd23f; --grass: #2fbf4a;
+    --font: "Jua", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
+  }
   * { box-sizing: border-box; }
-  body { margin: 0; background: #1d2433; color: #fff; font-family: sans-serif; line-height: 1.5; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; min-height: 100vh; color: var(--ink); font-family: var(--font); font-size: 17px; line-height: 1.55;
+    background-color: var(--sky-soft);
+    background-image: linear-gradient(180deg, #7fd3ff 0, #b9e7ff 260px, #e3f6ff 100%); }
+  /* 구름 장식 (글자 뒤, 눌러지지 않음) */
+  body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background:
+      radial-gradient(ellipse 90px 26px at 10% 14%, #fff 70%, transparent 72%),
+      radial-gradient(ellipse 60px 20px at 16% 12%, #fff 70%, transparent 72%),
+      radial-gradient(ellipse 110px 30px at 78% 22%, #fff 70%, transparent 72%),
+      radial-gradient(ellipse 70px 22px at 86% 19%, #fff 70%, transparent 72%),
+      radial-gradient(ellipse 100px 28px at 40% 92%, #fff 70%, transparent 72%); }
   [hidden] { display: none !important; }
-  header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 16px; background: #141a27; border-bottom: 1px solid #3a4560; }
-  header h1 { margin: 0; font-size: 20px; flex: 1 1 auto; }
-  #who { color: #cfd8ee; }
-  #total { color: #ffd84d; font-weight: bold; }
-  #login-slot { padding: 6px 14px; border: 2px dashed #6b7896; border-radius: 8px; color: #aab4cc; font-size: 14px; }
-  #warn { margin: 0; padding: 8px 16px; background: #5a2d2d; color: #ffd1d1; font-size: 14px; }
+
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px 16px; background: var(--sky);
+    color: #06284a; border-bottom: 6px solid #fff; box-shadow: 0 6px 0 rgba(11, 111, 192, .35); }
+  header h1 { margin: 0; flex: 1 1 auto; font-size: 26px; font-weight: 900; letter-spacing: -0.5px; color: #06284a; text-shadow: 0 2px 0 rgba(255, 255, 255, .7); }
+  #who, #total { padding: 4px 12px; border-radius: 999px; background: #fff; color: var(--ink); font-size: 16px; font-weight: 800; box-shadow: 0 3px 0 rgba(11, 111, 192, .35); }
+  #login-slot { padding: 6px 14px; border: 3px dashed #06284a; border-radius: 12px; background: rgba(255, 255, 255, .35); color: #06284a; font-size: 15px; font-weight: 800; }
+  #warn { margin: 0; padding: 10px 16px; background: #fff1f0; color: #8a1020; border-bottom: 3px solid #e5484d; font-size: 15px; font-weight: 700; }
+
   main { max-width: 960px; margin: 0 auto; padding: 16px; }
-  h2 { margin: 0 0 12px; font-size: 22px; }
-  .note { color: #aab4cc; font-size: 14px; }
-  button { font: inherit; font-size: 16px; cursor: pointer; }
-  .big { padding: 10px 20px; border: 0; border-radius: 8px; background: #4da3ff; color: #08121f; font-weight: bold; }
-  .ghost { padding: 8px 14px; border: 1px solid #6b7896; border-radius: 8px; background: transparent; color: #fff; }
+  main > section { padding: 18px; background: rgba(255, 255, 255, .94); border: 4px solid #fff; border-radius: 24px; box-shadow: 0 8px 0 rgba(11, 111, 192, .3); }
+  h2 { margin: 0 0 10px; font-size: 26px; font-weight: 900; color: var(--sky-night); }
+  .note { color: var(--ink-soft); font-size: 15px; }
+
+  button { font: inherit; font-weight: 800; cursor: pointer; min-height: 44px; -webkit-tap-highlight-color: transparent; }
+  .big { padding: 10px 22px; border: 0; border-radius: 16px; background: var(--sky-deep); color: #fff; font-size: 18px; box-shadow: 0 5px 0 #083f72; transition: transform .08s, box-shadow .08s; }
+  .big:active { transform: translateY(4px); box-shadow: 0 1px 0 #083f72; }
+  .ghost { padding: 8px 16px; border: 3px solid var(--sky-deep); border-radius: 14px; background: #fff; color: var(--sky-night); font-size: 16px; box-shadow: 0 4px 0 #8fd0fa; transition: transform .08s, box-shadow .08s; }
+  .ghost:active { transform: translateY(3px); box-shadow: 0 1px 0 #8fd0fa; }
+  button:focus-visible, input:focus-visible { outline: 4px solid #ffd23f; outline-offset: 2px; }
+
+  .io-row { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0; }
+  #io-msg { margin: 0 0 14px; padding: 10px 14px; border-radius: 14px; border-left: 8px solid var(--sky); background: #fff; font-size: 16px; font-weight: 700; box-shadow: 0 4px 0 rgba(11, 111, 192, .25); }
+  #io-msg.good { color: #14602a; border-left-color: var(--grass); }
+  #io-msg.bad { color: #a31220; border-left-color: #e5484d; }
+  #import-panel { margin-bottom: 16px; padding: 14px 16px; border: 4px solid var(--sun); border-radius: 20px; background: #fffbe6; color: var(--ink); box-shadow: 0 6px 0 rgba(224, 168, 0, .45); }
+  #import-panel h2 { font-size: 20px; margin-bottom: 8px; }
+  #import-panel p { margin: 4px 0; }
+
+  #name-form { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0; }
+  #name-form input { flex: 1 1 180px; min-width: 0; font: inherit; font-size: 20px; padding: 10px 14px; border-radius: 14px; border: 3px solid var(--sky); background: #fff; color: var(--ink); }
+
+  #cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; margin: 16px 0; }
+  .card { display: flex; flex-direction: column; justify-content: flex-start; align-items: flex-start; text-align: left; padding: 14px 16px; border-radius: 20px; border: 4px solid var(--sky); background: #fff; color: var(--ink); font-weight: 600; box-shadow: 0 6px 0 #8fd0fa; transition: transform .08s, box-shadow .08s; }
+  .card:not(:disabled):hover { transform: translateY(-2px); }
+  .card:not(:disabled):active { transform: translateY(4px); box-shadow: 0 2px 0 #8fd0fa; }
+  .card.cleared { border-color: var(--grass); background: #f2fff4; box-shadow: 0 6px 0 #9be3a8; }
+  .card:disabled { border-color: #b9c7d3; background: #eef3f7; color: #44586c; box-shadow: 0 6px 0 #d3dde6; cursor: not-allowed; }
+  .card b { display: block; font-size: 21px; font-weight: 900; }
+  .card .level { display: block; margin: 2px 0 6px; font-size: 15px; font-weight: 600; color: var(--ink-soft); }
+  .card:disabled .level { color: #44586c; }
+
   .table-wrap { overflow-x: auto; }
   #ranking-table { border-collapse: collapse; width: 100%; min-width: 260px; }
-  #ranking-table th, #ranking-table td, .stage-rank td { padding: 6px 8px; border-bottom: 1px solid #3a4560; text-align: left; overflow-wrap: anywhere; }
-  #ranking-table th { color: #aab4cc; font-size: 13px; font-weight: normal; }
+  #ranking-table th, #ranking-table td, .stage-rank td { padding: 6px 8px; border-bottom: 2px solid #cfe6f7; text-align: left; overflow-wrap: anywhere; }
+  #ranking-table th { color: var(--ink-soft); font-size: 14px; font-weight: 700; }
   #ranking-table th, #ranking-table td, .stage-rank td { white-space: nowrap; }
   #ranking-table td:nth-child(2), #ranking-table th:nth-child(2), .stage-rank td:nth-child(2) { white-space: normal; width: 100%; }
-  @media (max-width: 420px) { #ranking-table th, #ranking-table td { padding: 6px 4px; } }
-  #ranking-table tr.me td, .stage-rank tr.me td { background: #2f3d63; font-weight: bold; }
-  h2.sub { font-size: 18px; margin: 24px 0 8px; }
+  #ranking-table tr.me td, .stage-rank tr.me td { background: #d6efff; font-weight: 800; }
+  h2.sub { font-size: 20px; margin: 22px 0 8px; }
   .stage-rank { margin: 0 0 14px; }
-  .stage-rank h3 { margin: 0 0 4px; font-size: 16px; }
+  .stage-rank h3 { margin: 0 0 4px; font-size: 18px; color: var(--sky-night); }
   .stage-rank table { border-collapse: collapse; width: 100%; }
-  .io-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
-  #io-msg { margin: 0 0 12px; font-size: 15px; }
-  #io-msg.good { color: #9be6a6; }
-  #io-msg.bad { color: #ffb3b3; font-weight: bold; }
-  #import-panel { margin-bottom: 16px; padding: 12px 16px; border: 2px solid #ffd84d; border-radius: 12px; background: #26304a; }
-  #import-panel h2 { font-size: 18px; margin-bottom: 8px; }
-  #import-panel p { margin: 4px 0; }
-  #name-form { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
-  #name-form input { flex: 1 1 180px; min-width: 0; font-size: 18px; padding: 8px 12px; border-radius: 8px; border: 1px solid #6b7896; }
-  #cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 16px 0; }
-  .card { text-align: left; padding: 14px; border-radius: 12px; border: 2px solid #4da3ff; background: #26304a; color: #fff; }
-  .card.cleared { border-color: #7ee08a; }
-  .card:disabled { border-color: #3a4560; background: #1b2236; color: #7f8aa6; cursor: not-allowed; }
-  .card b { display: block; font-size: 18px; }
-  .card .level { display: block; margin: 2px 0 6px; font-size: 14px; color: #aab4cc; }
-  .card:disabled .level { color: #6b7896; }
-  #play-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
-  #hud { font-weight: bold; }
+
+  /* 플레이 화면: 진행시간을 가장 크게 */
+  #play-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 12px; margin-bottom: 10px; }
+  #hud { display: flex; flex-direction: column; min-width: 0; }
+  #hud-time { font-size: clamp(40px, 11vw, 72px); font-weight: 900; line-height: 1; color: var(--sky-deep); font-variant-numeric: tabular-nums; text-shadow: 0 3px 0 var(--sky-soft); }
+  #hud-info { margin-top: 2px; font-size: 16px; font-weight: 800; color: var(--ink); }
   #wrap { position: relative; margin: 0 auto; }
-  canvas { display: block; width: 100%; height: auto; border-radius: 8px; background: #8fd3ff; }
-  #clear { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 12px; text-align: center; background: rgba(10, 16, 30, 0.82); border-radius: 8px; }
-  #clear { overflow: auto; justify-content: safe center; }
-  #clear h2 { margin: 0; }
-  #clear-stars { font-size: 34px; line-height: 1.1; color: #ffd84d; letter-spacing: 4px; }
-  @media (max-width: 700px) {
-    #clear { gap: 3px; padding: 6px; font-size: 14px; }
-    #clear h2 { font-size: 18px; }
-    #clear-stars { font-size: 26px; }
-    #clear .note { font-size: 12px; }
-    #clear button { font-size: 14px; padding: 6px 12px; }
-  }
+  canvas { display: block; width: 100%; height: auto; border: 4px solid #fff; border-radius: 18px; background: #8fd3ff; box-shadow: 0 6px 0 rgba(11, 111, 192, .35); }
+  #clear { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; justify-content: safe center; gap: 6px; padding: 12px; overflow: auto;
+    text-align: center; background: rgba(6, 40, 74, .9); color: #fff; border-radius: 18px; }
+  #clear h2 { margin: 0; font-size: 26px; color: #fff; }
+  #clear .note { color: #cfe9ff; font-size: 14px; }
   #clear .row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
-  .pad { position: absolute; bottom: 10px; width: 64px; height: 64px; border-radius: 50%; border: 2px solid rgba(255,255,255,.7); background: rgba(20, 26, 39, .45); color: #fff; font-size: 26px; touch-action: none; user-select: none; -webkit-user-select: none; display: none; }
-  #pad-left { left: 10px; } #pad-right { left: 84px; } #pad-jump { right: 10px; width: 76px; height: 76px; }
+  #clear-stars { font-size: 36px; line-height: 1.1; letter-spacing: 4px; color: var(--sun); }
+  #clear-time { font-weight: 800; }
+  #clear-time .t-big { font-size: 48px; font-weight: 900; line-height: 1.1; color: #fff; }
+  #clear-time .t-rest { font-size: 18px; }
+  #clear-time.newbest .t-rest { color: var(--sun); }
+  .pad { position: absolute; bottom: 12px; width: 68px; height: 68px; border-radius: 50%; border: 3px solid #fff; background: rgba(11, 111, 192, .6); color: #fff; font-size: 28px; font-weight: 900;
+    box-shadow: 0 4px 0 rgba(0, 0, 0, .25); touch-action: none; user-select: none; -webkit-user-select: none; display: none; }
+  #pad-left { left: 10px; } #pad-right { left: 88px; } #pad-jump { right: 10px; width: 80px; height: 80px; }
   @media (pointer: coarse), (max-width: 700px) { .pad { display: block; } }
   #keys-help { display: none; }
   @media (pointer: fine) and (min-width: 701px) { #keys-help { display: block; } }
+
+  /* 폰: 글자는 13px 아래로 내려가지 않게, 클리어 화면은 단추까지 한 화면에 들어오게 */
+  @media (max-width: 700px) {
+    main { padding: 12px; }
+    main > section { padding: 14px; border-radius: 20px; }
+    #play-screen { padding: 10px; }
+    h2 { font-size: 23px; }
+    header h1 { font-size: 24px; }
+    #clear { gap: 1px; padding: 6px; font-size: 14px; line-height: 1.35; }
+    #clear h2 { font-size: 18px; }
+    #clear-stars { font-size: 24px; }
+    #clear-time .t-big { font-size: 28px; }
+    #clear-time .t-rest { font-size: 14px; }
+    #clear .note { font-size: 13px; }
+    #clear button { font-size: 14px; padding: 4px 12px; min-height: 36px; }
+    #clear .row { gap: 6px; margin-top: 2px; }
+  }
 </style>
 </head>
 <body>
@@ -136,7 +185,10 @@
 
   <section id="play-screen" hidden>
     <div id="play-top">
-      <span id="hud"></span>
+      <div id="hud">
+        <span id="hud-time">⏱ 0.0초</span>
+        <span id="hud-info"></span>
+      </div>
       <button class="ghost" id="back">스테이지 고르기</button>
     </div>
     <div id="wrap">
@@ -269,7 +321,9 @@ function starText(n) {
 
 function updateHud() {
   const n = run.got.filter(Boolean).length;
-  $('hud').textContent = `스테이지 ${run.stage.id} · ${run.stage.name} · 🪙 ${n}/${run.stage.coins.length} · ⏱ ${(run.t / 60).toFixed(1)}초 / 목표 ${run.stage.par}초`;
+  // 진행시간은 가장 크게(#hud-time), 나머지는 작게(#hud-info)
+  $('hud-time').textContent = `⏱ ${(run.t / 60).toFixed(1)}초`;
+  $('hud-info').textContent = `스테이지 ${run.stage.id} · ${run.stage.name} · 🪙 ${n}/${run.stage.coins.length} · 목표 ${run.stage.par}초`;
 }
 
 function update() {
@@ -305,10 +359,17 @@ function finish() {
   info.textContent = `코인 ${got}/${total} · ${more}`;
   const timeBox = document.createElement('div');
   timeBox.id = 'clear-time';
-  timeBox.textContent = `⏱ ${formatTime(cs)}초 · ` + (r.newBest
+  // 걸린 시간은 가장 크게(.t-big), 최고기록 설명은 작게(.t-rest). 글자 내용은 그대로다.
+  const timeBig = document.createElement('span');
+  timeBig.className = 't-big';
+  timeBig.textContent = `⏱ ${formatTime(cs)}초`;
+  const timeRest = document.createElement('span');
+  timeRest.className = 't-rest';
+  timeRest.textContent = ' · ' + (r.newBest
     ? (r.prevTime ? `NEW! 최고기록 (이전 ${formatTime(r.prevTime)}초)` : 'NEW! 첫 기록')
     : `최고기록은 ${formatTime(r.bestTime || cs)}초예요`);
-  if (r.newBest) timeBox.style.cssText = 'color:#ffd84d;font-weight:bold';
+  timeBox.append(timeBig, timeRest);
+  if (r.newBest) timeBox.classList.add('newbest');
   const row = document.createElement('div');
   row.className = 'row';
   const next = STAGES.find(s => s.id === run.stage.id + 1);
@@ -343,8 +404,14 @@ function draw() {
   const { stage, player: p } = run;
   const cam = Math.max(0, Math.min(p.x + PHYS.W / 2 - viewW / 2, stage.width - viewW));
   const g = ctx.createLinearGradient(0, 0, 0, VIEW_H);
-  g.addColorStop(0, '#6cc0ff'); g.addColorStop(1, '#d6f0ff');
+  g.addColorStop(0, '#38b6ff'); g.addColorStop(1, '#e3f6ff');
   ctx.fillStyle = g; ctx.fillRect(0, 0, viewW, VIEW_H);
+  // 해 (화면 오른쪽 위에 가만히 떠 있음)
+  const sx = viewW - 70, sy = 62;
+  const glow = ctx.createRadialGradient(sx, sy, 10, sx, sy, 70);
+  glow.addColorStop(0, 'rgba(255,240,150,.95)'); glow.addColorStop(1, 'rgba(255,240,150,0)');
+  ctx.fillStyle = glow; ctx.fillRect(sx - 70, sy - 70, 140, 140);
+  ctx.fillStyle = '#ffe14d'; ctx.beginPath(); ctx.arc(sx, sy, 26, 0, 7); ctx.fill();
 
   // 구름 (천천히 따라오는 배경)
   ctx.fillStyle = 'rgba(255,255,255,.85)';
@@ -357,22 +424,29 @@ function draw() {
   ctx.save(); ctx.translate(-Math.round(cam), 0);
   for (const r of stage.platforms) {
     if (r.x > cam + viewW || r.x + r.w < cam) continue;
-    ctx.fillStyle = '#8a5a35'; ctx.fillRect(r.x, r.y, r.w, r.h);
-    ctx.fillStyle = '#4cc05a'; ctx.fillRect(r.x, r.y, r.w, 8);
+    ctx.fillStyle = '#9a6a3c'; ctx.fillRect(r.x, r.y, r.w, r.h);                                  // 흙
+    ctx.fillStyle = '#7d5430'; for (let y = r.y + 16; y < r.y + r.h; y += 16) ctx.fillRect(r.x, y, r.w, 3);   // 흙 줄무늬
+    ctx.fillStyle = '#2c8f3c'; ctx.fillRect(r.x, r.y + 10, r.w, 3);                               // 풀 아래 그림자
+    ctx.fillStyle = '#3fc653'; ctx.fillRect(r.x, r.y, r.w, 10);                                   // 풀
+    ctx.fillStyle = '#86e892'; ctx.fillRect(r.x, r.y, r.w, 4);                                    // 풀 윗면 반짝임
   }
-  // 깃발
+  // 깃발 (살랑살랑)
   const gl = stage.goal;
-  ctx.fillStyle = '#dfe6f2'; ctx.fillRect(gl.x + 12, gl.y, 5, gl.h);
-  ctx.fillStyle = '#ff5a6e'; ctx.beginPath(); ctx.moveTo(gl.x + 17, gl.y + 2); ctx.lineTo(gl.x + 17 + 26, gl.y + 14); ctx.lineTo(gl.x + 17, gl.y + 26); ctx.fill();
-  // 코인
+  const wave = Math.sin(run.t / 8) * 4;
+  ctx.fillStyle = '#fff'; ctx.fillRect(gl.x + 12, gl.y - 6, 5, gl.h + 6);
+  ctx.fillStyle = '#ffd23f'; ctx.beginPath(); ctx.arc(gl.x + 14.5, gl.y - 8, 5, 0, 7); ctx.fill();
+  ctx.fillStyle = '#ff4f6d'; ctx.beginPath(); ctx.moveTo(gl.x + 17, gl.y); ctx.lineTo(gl.x + 44, gl.y + 12 + wave); ctx.lineTo(gl.x + 17, gl.y + 26); ctx.fill();
+  // 코인 (빙글빙글 돌며 반짝)
   stage.coins.forEach((c, i) => {
     if (run.got[i]) return;
     const w = Math.abs(Math.cos(run.t / 20 + i)) * 9 + 2;
-    ctx.fillStyle = '#ffd84d'; ctx.beginPath(); ctx.ellipse(c.x, c.y, w, 10, 0, 0, 7); ctx.fill();
-    ctx.strokeStyle = '#c99a00'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = '#ffd23f'; ctx.beginPath(); ctx.ellipse(c.x, c.y, w, 10, 0, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#d89b00'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.beginPath(); ctx.ellipse(c.x - w * 0.3, c.y - 3, Math.max(1, w * 0.22), 4, 0, 0, 7); ctx.fill();
   });
-  // 캐릭터
-  ctx.fillStyle = '#3b6fd8'; ctx.beginPath(); ctx.roundRect(p.x, p.y, PHYS.W, PHYS.H, 6); ctx.fill();
+  // 캐릭터 (하늘색 배경에서 잘 보이는 주황색)
+  ctx.fillStyle = '#ff7a45'; ctx.beginPath(); ctx.roundRect(p.x, p.y, PHYS.W, PHYS.H, 7); ctx.fill();
+  ctx.strokeStyle = '#8a3414'; ctx.lineWidth = 2; ctx.stroke();
   ctx.fillStyle = '#fff'; const ex = p.facing > 0 ? 12 : 3;
   ctx.fillRect(p.x + ex, p.y + 8, 5, 7); ctx.fillRect(p.x + ex + 7, p.y + 8, 5, 7);
   ctx.fillStyle = '#111'; const pe = p.facing > 0 ? 2 : 0;
