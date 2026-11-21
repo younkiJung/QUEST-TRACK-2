@@ -1,0 +1,47 @@
+rules_version = '2';
+
+// week-07 플랫폼 게임의 Firestore 보안 규칙.
+// 콘솔의 Firestore Database > 규칙 탭에 이 파일의 내용을 붙여 넣고 "게시"를 누른다.
+//
+// 저장하는 곳: records/{uid} — 사람마다 문서 하나. 문서 이름이 그 사람의 고유 번호(uid)다.
+// 문서에 들어 있는 것: v, uid, nickname(별명), stages(스테이지 기록), updatedAt(서버 시간).
+// Google 이름과 메일은 문서에 넣지 않는다.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /records/{uid} {
+      // 읽기: 누구나. 주인별 랭킹에서 다른 사람의 별명과 기록을 보여 주려고 열어 둔다.
+      // (나만 봐야 하게 바꾸려면 이 줄을 "allow read: if request.auth != null && request.auth.uid == uid;" 로 바꾼다.
+      //  그러면 랭킹에는 나만 보인다.)
+      allow read: if true;
+
+      // 쓰기(만들기·고치기): 로그인한 사람이 자기 문서에만, 모양이 맞을 때만.
+      allow create, update: if request.auth != null
+                            && request.auth.uid == uid
+                            && validRecord(request.resource.data, uid);
+
+      // 지우기: 자기 문서만.
+      allow delete: if request.auth != null
+                    && request.auth.uid == uid;
+    }
+
+    // 문서 모양 검사: 정해진 칸만, 자기 uid, 별명은 1~12글자, 스테이지 기록은 map.
+    function validRecord(data, uid) {
+      return data.keys().hasOnly(['v', 'uid', 'nickname', 'stages', 'updatedAt'])
+          && data.keys().hasAll(['v', 'uid', 'nickname', 'stages'])
+          && data.v == 1
+          && data.uid == uid
+          && data.nickname is string
+          && data.nickname.size() >= 1
+          && data.nickname.size() <= 12
+          && data.stages is map
+          && data.stages.size() <= 50
+          && (!('updatedAt' in data) || data.updatedAt == request.time);
+    }
+
+    // 그 밖의 모든 곳은 읽기도 쓰기도 막는다.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

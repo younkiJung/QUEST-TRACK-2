@@ -30,8 +30,19 @@
     color: #06284a; border-bottom: 6px solid #fff; box-shadow: 0 6px 0 rgba(11, 111, 192, .35); }
   header h1 { margin: 0; flex: 1 1 auto; font-size: 26px; font-weight: 900; letter-spacing: -0.5px; color: #06284a; text-shadow: 0 2px 0 rgba(255, 255, 255, .7); }
   #who, #total { padding: 4px 12px; border-radius: 999px; background: #fff; color: var(--ink); font-size: 16px; font-weight: 800; box-shadow: 0 3px 0 rgba(11, 111, 192, .35); }
-  #login-slot { padding: 6px 14px; border: 3px dashed #06284a; border-radius: 12px; background: rgba(255, 255, 255, .35); color: #06284a; font-size: 15px; font-weight: 800; }
-  #warn { margin: 0; padding: 10px 16px; background: #fff1f0; color: #8a1020; border-bottom: 3px solid #e5484d; font-size: 15px; font-weight: 700; }
+  /* 로그인 · 로그아웃 단추가 들어가는 자리 */
+  #login-slot { display: flex; flex-wrap: wrap; gap: 8px; }
+  #login-slot button { min-height: 40px; padding: 4px 14px; font-size: 15px; }
+  #cloud-status { padding: 3px 12px; border-radius: 999px; background: #fff; color: var(--ink); font-size: 14px; font-weight: 800; box-shadow: 0 3px 0 rgba(11, 111, 192, .35); }
+  #cloud-status[data-state="error"] { color: #a31220; }
+  /* 로그인이나 저장이 실패하면 이유를 이 줄에 그대로 보여 준다 */
+  #cloud-err { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 16px; background: #fff1f0; color: #8a1020; border-bottom: 3px solid #e5484d; font-size: 15px; font-weight: 700; }
+  #cloud-err-text { flex: 1 1 240px; overflow-wrap: anywhere; }
+  #cloud-err button { min-height: 40px; padding: 4px 14px; font-size: 15px; }
+  #login-screen .io-row { align-items: center; }
+  #migrate-box { display: block; margin: 8px 0; padding: 10px 14px; border: 3px solid var(--sun); border-radius: 14px; background: #fffbe6; color: var(--ink); font-weight: 700; }
+  #migrate-box input { width: 20px; height: 20px; margin-right: 6px; vertical-align: middle; }
+  #login-screen p, #migrate-box { word-break: keep-all; }
 
   main { max-width: 960px; margin: 0 auto; padding: 16px; }
   main > section { padding: 18px; background: rgba(255, 255, 255, .94); border: 4px solid #fff; border-radius: 24px; box-shadow: 0 8px 0 rgba(11, 111, 192, .3); }
@@ -140,8 +151,6 @@
   #touch-help { display: none; }
   @media (pointer: coarse), (max-width: 700px) { #touch-help { display: block; } #pad-jump { display: flex; } }
   @media (max-width: 700px) { #ready { top: 6px; left: 6px; right: 6px; padding: 6px 8px; font-size: 14px; } #ready .ready-title { font-size: 16px; } }
-  /* "로그인 자리"는 글자는 그대로 두고, 처음 온 사람에게 고장 난 칸처럼 보이지 않게 얇고 흐린 선으로 */
-  #login-slot { border: 1px solid rgba(6, 40, 74, .4); background: transparent; font-weight: 600; font-size: 14px; }
 </style>
 </head>
 <body>
@@ -149,11 +158,29 @@
   <h1>내 플랫폼 게임</h1>
   <span id="who" hidden></span>
   <span id="total" hidden></span>
-  <div id="login-slot">로그인 자리</div>
+  <span id="cloud-status" role="status" hidden></span>
+  <div id="login-slot">
+    <button class="ghost" id="login-btn" type="button" disabled>Google 로 로그인</button>
+    <button class="ghost" id="logout-btn" type="button" hidden>로그아웃</button>
+  </div>
 </header>
-<p id="warn" hidden>이 브라우저가 저장을 막고 있어요. 기록은 이 창을 닫으면 사라져요.</p>
+<div id="cloud-err" role="alert" hidden>
+  <span id="cloud-err-text"></span>
+  <button class="ghost" id="retry-save" type="button" hidden>다시 저장</button>
+</div>
 
 <main>
+  <section id="login-screen" hidden>
+    <h2>로그인하면 열려요</h2>
+    <p>Google 계정으로 로그인하면 내 기록이 서버에 저장돼서, 어느 기기에서 열어도 이어서 할 수 있어요.</p>
+    <p class="note">로그인은 새 창(팝업)으로 열려요. Google 이름과 메일은 저장하지 않고, 별명과 게임 기록만 저장해요.</p>
+    <div class="io-row">
+      <button class="big" id="login-btn-big" type="button" disabled>Google 로 로그인</button>
+      <button class="ghost" id="reload-btn" type="button" hidden>다시 불러오기</button>
+    </div>
+    <p class="note" id="login-status" role="status">Firebase 에 연결하는 중…</p>
+  </section>
+
   <p id="io-msg" class="note" role="status" hidden></p>
   <section id="import-panel" hidden>
     <h2>기록 불러오기</h2>
@@ -169,16 +196,18 @@
 
   <section id="name-screen" hidden>
     <h2>이름을 정해요</h2>
-    <p class="note">기록 위에 보여 줄 별명이에요. 12글자까지 쓸 수 있어요. 실명이나 학교 이름은 쓰지 마세요.</p>
+    <p class="note">기록 위에 보여 줄 별명이에요. 12글자까지 쓸 수 있어요. 실명이나 학교 이름은 쓰지 마세요. 다른 사람도 랭킹에서 이 별명을 볼 수 있어요.</p>
     <form id="name-form">
       <input id="name-input" maxlength="12" placeholder="별명" autocomplete="off" aria-label="별명">
       <button class="big">시작</button>
     </form>
-    <p class="note" id="owners-note" hidden></p>
-    <p class="note">다른 기기에서 쓰던 기록이 있나요? 파일로 옮겨 올 수 있어요.</p>
+    <label id="migrate-box" hidden>
+      <input type="checkbox" id="migrate-check" checked>
+      이 기기에 저장돼 있던 기록을 내 계정으로 가져와요 (<span id="migrate-sum"></span>)
+    </label>
+    <p class="note">다른 곳에서 내려받은 기록 파일이 있나요? 파일로 옮겨 올 수 있어요.</p>
     <div class="io-row">
       <button class="ghost io-import" type="button">기록 불러오기</button>
-      <button class="ghost" id="newowner-cancel" type="button" hidden>취소 (원래 주인으로 돌아가기)</button>
     </div>
   </section>
 
@@ -197,10 +226,9 @@
       <button class="ghost" id="ranking-btn">주인별 랭킹</button>
     </div>
     <details id="more">
-      <summary>더 보기 (새 주인 · 이름 · 기록 옮기기)</summary>
+      <summary>더 보기 (이름 · 기록 옮기기)</summary>
       <div class="more-item">
-        <button class="ghost" id="newowner-btn">새 주인으로 시작</button>
-        <span class="note">다른 사람이 같은 기기로 할 때 눌러요. 지금 기록은 보관돼요.</span>
+        <span class="note">다른 사람이 같은 기기로 하려면 위쪽의 "로그아웃"을 누르고, 그 사람이 자기 Google 계정으로 로그인해요.</span>
       </div>
       <div class="more-item">
         <button class="ghost" id="rename">이름 바꾸기</button>
@@ -258,35 +286,53 @@ let save = loadSave();
 
 // ---------- 화면 바꾸기 ----------
 function show(name) {
-  for (const s of ['name', 'select', 'play', 'ranking']) $(s + '-screen').hidden = s !== name;
+  for (const s of ['login', 'name', 'select', 'play', 'ranking']) $(s + '-screen').hidden = s !== name;
   if (name === 'play') { $('io-msg').hidden = true; $('import-panel').hidden = true; }
-  if (name === 'name') refreshNameScreen();
   if (name !== 'play') running = false;
   refreshHeader();
 }
 
+// 위쪽 표시: 로그인했으면 내 별명·코인·저장 상태·로그아웃 단추, 아니면 로그인 단추
 function refreshHeader() {
-  const named = !!save.owner;
+  const uid = sessionUid();
+  const named = !!uid && !!save.owner;
   $('who').hidden = !named;
   $('total').hidden = !named;
   if (named) {
     $('who').textContent = save.owner;
     $('total').textContent = '🪙 ' + totalCoins(save);
   }
-  $('warn').hidden = storageOk;
+  $('login-btn').hidden = !!uid;
+  $('logout-btn').hidden = !uid;
+  if (!uid) $('cloud-status').hidden = true;
 }
 
 // ---------- 이름 ----------
-$('name-form').onsubmit = (e) => {
+let firstLogin = false;       // 이 계정으로 처음 로그인해서 별명을 정하는 중
+let legacyRecord = null;      // 이 기기에 예전에 저장하던 기록 (옮겨 올 수 있다)
+
+$('name-form').onsubmit = async (e) => {
   e.preventDefault();
   const name = cleanName($('name-input').value);
   if (!name) { $('name-input').focus(); return; }
-  // 기록이 빈 상태에서 이 기기에 보관된 주인 이름을 쓰면 그 주인의 기록으로 이어 한다
-  const back = !save.owner && Object.keys(save.stages).length === 0 ? takeArchivedOwner(name) : null;
-  save = back || setOwner(name);
-  prevOwnerForNew = null;
+  if (firstLogin) {
+    // 처음 로그인: 별명을 정해서 내 계정에 기록을 만든다 (예전 기록을 가져오기로 했으면 같이)
+    const useLegacy = !!legacyRecord && $('migrate-check').checked;
+    const base = useLegacy ? cleanSave(legacyRecord) : loadSave();   // 파일로 불러온 기록이 있으면 그걸 바탕으로
+    base.owner = name;
+    writeSave(base);
+    const button = $('name-form').querySelector('button');
+    button.disabled = true;
+    const r = await flushSave();
+    button.disabled = false;
+    if (!r.ok) return;   // 이유는 위쪽 빨간 줄에 보인다. 이 화면에 남아서 다시 시도할 수 있다.
+    if (useLegacy) clearLegacyLocal();   // 계정에 저장된 걸 확인한 뒤에만 이 기기의 예전 기록을 지운다
+    save = loadSave();
+    showSelect();
+    return;
+  }
+  save = setOwner(name);   // 이름 바꾸기
   showSelect();
-  if (back) ioMsg(`${name}의 기록으로 이어 해요.`, false);
 };
 
 $('rename').onclick = () => {
@@ -298,7 +344,7 @@ $('rename').onclick = () => {
 // ---------- 스테이지 고르기 ----------
 const LEVEL_WORD = ['', '쉬움', '보통', '어려움'];
 function showSelect() {
-  prevOwnerForNew = null;   // 스테이지 고르는 화면에 왔으면 "새 주인" 취소 표시는 끝난 것
+  firstLogin = false;   // 스테이지 고르는 화면에 왔으면 처음 로그인 절차는 끝난 것
   show('select');
   $('select-title').textContent = save.owner + '의 기록';
   const cleared = STAGES.filter(s => stageRecord(save, s.id)).length;
@@ -445,7 +491,7 @@ function finish() {
   box.append(h, starBox, cond1, cond2, starNote, info, timeBox);
   if (!next) { const all = document.createElement('div'); all.textContent = '마지막 스테이지까지 모두 깼어요!'; box.append(all); }
   box.append(row);
-  if (!r.saved) { const w = document.createElement('div'); w.className = 'note'; w.textContent = '이 브라우저가 저장을 막고 있어서 기록이 남지 않아요.'; box.append(w); }
+  if (!r.saved) { const w = document.createElement('div'); w.className = 'note'; w.textContent = '로그인이 풀려서 기록이 저장되지 않았어요. 다시 로그인해 주세요.'; box.append(w); }
   box.hidden = false;
 }
 
@@ -607,7 +653,7 @@ $('import-yes').onclick = () => {
   pendingImport = null;
   $('import-panel').hidden = true;
   save = loadSave();
-  ioMsg(r.saved ? '기록을 불러왔어요.' : '기록을 불러왔지만 이 브라우저가 저장을 막고 있어요. 창을 닫으면 사라져요.', !r.saved);
+  ioMsg(r.saved ? '기록을 불러왔어요. 내 계정에 저장하고 있어요.' : '기록을 불러왔지만 로그인이 풀려서 저장하지 못했어요. 다시 로그인해 주세요.', !r.saved);
   if (save.owner) showSelect(); else show('name');
 };
 
@@ -617,35 +663,124 @@ $('import-no').onclick = () => {
   ioMsg('취소했어요. 지금 기록은 그대로예요.', false);
 };
 
-// ---------- 주인별 랭킹 · 새 주인 ----------
-// 이 기기에서 쓴 주인끼리의 랭킹이다. 계산은 ranking.js, 주인을 보관하는 건 save.js.
-let prevOwnerForNew = null;   // "새 주인으로 시작"을 눌렀을 때의 원래 주인 (취소하면 되돌린다)
+// ---------- 로그인 · 클라우드 ----------
+// 로그인과 저장은 save.js 가 맡고, 여기는 화면에 보여 주는 일만 한다.
+const STATUS_TEXT = { saving: '☁ 저장 중…', saved: '☁ 저장했어요', error: '☁ 저장하지 못했어요', slow: '☁ 저장이 늦어지고 있어요 (인터넷 확인)' };
 
-function refreshNameScreen() {
-  const names = save.owner ? [] : archivedNames();
-  $('owners-note').hidden = names.length === 0;
-  $('owners-note').textContent = names.length ? `이 기기에 기록이 있는 주인: ${names.join(', ')} · 같은 이름을 쓰면 그 주인의 기록으로 이어 해요.` : '';
-  $('newowner-cancel').hidden = prevOwnerForNew === null;
+function showCloudError(text, canRetry) {
+  $('cloud-err-text').textContent = text;
+  $('retry-save').hidden = !canRetry;
+  $('cloud-err').hidden = false;
 }
 
-$('newowner-btn').onclick = () => {
-  const prev = save.owner;
-  const r = startNewOwner();
-  save = r.save;
-  prevOwnerForNew = prev || null;
-  $('name-input').value = '';
+function clearCloudError() {
+  $('cloud-err').hidden = true;
+  $('cloud-err-text').textContent = '';
+}
+
+setCloudHooks({
+  status(state) {
+    const el = $('cloud-status');
+    const text = STATUS_TEXT[state];
+    el.hidden = !text || !sessionUid();
+    el.textContent = text || '';
+    el.dataset.state = state;
+  },
+  // 저장이 실패하면 이유를 보여 주고 "다시 저장" 단추를 켠다. 성공하면 빨간 줄을 지운다.
+  error(text) {
+    if (text) showCloudError(text, true); else clearCloudError();
+  },
+});
+
+function showLogin(statusText, canReload) {
+  show('login');
+  $('login-status').textContent = statusText;
+  $('reload-btn').hidden = !canReload;
+}
+
+function enableLogin(on) {
+  $('login-btn').disabled = !on;
+  $('login-btn-big').disabled = !on;
+}
+
+// 로그인 상태가 바뀔 때마다 불린다 (user 는 { uid } 또는 null)
+async function handleAuth(user) {
+  enableLogin(true);
+  if (!user) {
+    endSession();
+    save = loadSave();
+    firstLogin = false;
+    legacyRecord = null;
+    $('login-btn').textContent = 'Google 로 로그인';
+    showLogin('로그인하면 시작할 수 있어요.', false);
+    return;
+  }
+  startSession(user.uid, null);
+  save = loadSave();
+  showLogin('내 기록을 불러오는 중…', false);
+  let data;
+  try {
+    data = await cloudRead(user.uid);
+  } catch (e) {
+    if (sessionUid() !== user.uid) return;
+    showCloudError(explainError(e, 'read'), false);
+    showLogin('기록을 불러오지 못했어요.', true);
+    return;
+  }
+  if (sessionUid() !== user.uid) return;   // 불러오는 동안 로그아웃하거나 다른 사람이 로그인했으면 버린다
+  clearCloudError();
+  if (data) {
+    startSession(user.uid, fromCloud(data));
+    save = loadSave();
+    if (save.owner) { showSelect(); return; }
+  }
+  beginFirstLogin();
+}
+
+// 이 계정으로 처음 로그인: 별명을 정하게 한다. 이 기기에 예전 기록이 있으면 가져올지 묻는다.
+function beginFirstLogin() {
+  firstLogin = true;
+  legacyRecord = readLegacyLocal();
+  $('migrate-box').hidden = !legacyRecord;
+  if (legacyRecord) {
+    $('migrate-check').checked = true;
+    $('migrate-sum').textContent = summarize(legacyRecord);
+  }
+  $('name-input').value = legacyRecord ? legacyRecord.owner : '';
   show('name');
   $('name-input').focus();
-  ioMsg(prev ? `${prev}의 기록은 보관했어요. 새 주인의 이름을 정해 주세요.` : '새 주인의 이름을 정해 주세요.', !r.saved);
+}
+
+// 로그인 단추: 새 창(팝업)을 단추를 누른 순간에 바로 열어야 해서, 눌린 그 자리에서 곧바로 부른다.
+function onLoginClick() {
+  clearCloudError();
+  enableLogin(false);
+  let p;
+  try { p = cloudLogin(); } catch (e) { p = Promise.reject(e); }
+  p.then(() => {}, (e) => { showCloudError(explainError(e, 'login'), false); })
+   .then(() => { if (!sessionUid()) enableLogin(true); });
+}
+$('login-btn').onclick = onLoginClick;
+$('login-btn-big').onclick = onLoginClick;
+
+$('logout-btn').onclick = async () => {
+  const r = await flushSave();   // 올리는 중인 기록이 있으면 끝날 때까지 기다린다
+  if (!r.ok) {
+    showCloudError('저장이 끝나지 않아서 로그아웃하지 않았어요. 아래 "다시 저장"이 성공한 뒤에 눌러 주세요. ' + explainError(r.error, 'write'), true);
+    return;
+  }
+  try { await cloudLogout(); } catch (e) { showCloudError(explainError(e, 'logout'), false); }
 };
 
-$('newowner-cancel').onclick = () => {
-  const back = prevOwnerForNew ? takeArchivedOwner(prevOwnerForNew) : null;
-  if (back) save = back;
-  prevOwnerForNew = null;
-  showSelect();
-  ioMsg('취소했어요. 원래 주인의 기록 그대로예요.', false);
+$('retry-save').onclick = () => retrySave();
+
+$('reload-btn').onclick = () => {
+  const uid = sessionUid();
+  if (uid) handleAuth({ uid });
 };
+
+// ---------- 주인별 랭킹 ----------
+// 로그인한 모든 사람의 랭킹이다. 계산은 ranking.js, 서버에서 읽어 오는 건 save.js.
 
 function cell(row, text, tag) {
   const c = document.createElement(tag || 'td');
@@ -653,12 +788,24 @@ function cell(row, text, tag) {
   row.append(c);
 }
 
-function showRanking() {
-  const r = buildRanking(loadSave(), loadOwners(), STAGES);
+async function showRanking() {
   show('ranking');
-  $('ranking-note').textContent = '이 기기에서 쓴 주인끼리의 랭킹이에요. 별 합계가 많은 순서이고, 같으면 코인 합계가 많은 쪽이 앞이에요. '
-    + (r.overall.length < 2 ? '주인이 한 명뿐이에요. "새 주인으로 시작"으로 다른 주인을 만들면 비교할 수 있어요. ' : '')
-    + '다른 기기 사람과의 랭킹은 로그인과 보관함을 붙인 뒤에 만들 수 있어요.';
+  $('ranking-note').textContent = '랭킹을 불러오는 중…';
+  $('ranking-table').replaceChildren();
+  $('ranking-stages').replaceChildren();
+  let records;
+  try {
+    records = await cloudListAll();
+  } catch (e) {
+    $('ranking-note').textContent = '랭킹을 불러오지 못했어요. 위쪽 빨간 줄의 이유를 확인해 주세요.';
+    showCloudError(explainError(e, 'list'), false);
+    return;
+  }
+  if ($('ranking-screen').hidden) return;   // 기다리는 동안 다른 화면으로 갔으면 그리지 않는다
+  const me = loadSave();
+  const r = buildRanking(me, ownersFromRecords(records, sessionUid(), me.owner, STAGES), STAGES);
+  $('ranking-note').textContent = '로그인한 모든 사람의 랭킹이에요. 별 합계가 많은 순서이고, 같으면 코인 합계가 많은 쪽이 앞이에요. '
+    + (r.overall.length < 2 ? '아직 나뿐이에요. 친구가 로그인해서 스테이지를 깨면 여기에 나타나요.' : '');
   const table = $('ranking-table');
   table.replaceChildren();
   const head = table.insertRow();
@@ -704,7 +851,12 @@ $('ranking-btn').onclick = showRanking;
 $('ranking-back').onclick = showSelect;
 
 // ---------- 시작 ----------
-if (save.owner) showSelect(); else show('name');
+enableLogin(false);
+showLogin('Firebase 에 연결하는 중…', false);
+cloudInit(handleAuth, (e) => showCloudError(explainError(e, 'login'), false)).catch((e) => {
+  showCloudError(explainError(e, 'init'), false);
+  $('login-status').textContent = 'Firebase 에 연결하지 못해서 로그인할 수 없어요. 위쪽 빨간 줄을 확인해 주세요.';
+});
 </script>
 </body>
 </html>

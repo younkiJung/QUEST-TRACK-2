@@ -23,7 +23,8 @@
 <main>
 <h1>플랫폼 게임 확인</h1>
 <p>게임(../index.html)이 쓰는 파일, 저장, 스테이지, 화면을 하나씩 확인해요.
-확인할 때 게임의 진짜 기록은 잠깐 빌려 쓰고 끝나면 그대로 돌려놓아요.</p>
+로그인과 저장은 시험용 가짜 서버(주소 끝에 ?fake=1)로 확인해요. 진짜 Google 로그인과 Firestore 는 GitHub Pages 주소에서 사람이 직접 확인해요.
+이 기기에 예전에 저장하던 기록(localStorage)은 확인하는 동안만 빌려 쓰고 끝나면 그대로 돌려놓아요.</p>
 <button id="again">다시 확인</button>
 <div id="summary">확인하는 중…</div>
 <table id="list"></table>
@@ -85,15 +86,21 @@ async function run() {
   document.getElementById('summary').textContent = '확인하는 중…';
 
   // 1. 파일
-  const loaded = typeof loadSave === 'function' && typeof stepPlayer === 'function' && Array.isArray(STAGES);
+  const loaded = typeof loadSave === 'function' && typeof stepPlayer === 'function' && Array.isArray(STAGES) && typeof makeFakeCloud === 'function' && typeof explainError === 'function';
   row(loaded, 'save.js · physics.js · stages.js 불러오기', loaded ? '게임이 쓰는 함수와 스테이지가 모두 있어요.' : '../ 에 있는 파일을 불러오지 못했어요.');
   if (!loaded) return finish();
 
-  // 2. 저장 (진짜 기록은 빌려 쓰고 돌려놓음)
-  let backup = null, backupOwners = null;
-  try { backup = localStorage.getItem(SAVE_KEY); backupOwners = localStorage.getItem(OWNERS_KEY); } catch (e) {}
+  // 2. 저장 (로그인·Firestore 창구는 시험용 가짜 서버로 대신한다. 이 페이지의 save.js 에 가짜를 끼워서 쓴다.)
+  const fake = makeFakeCloud();
+  useCloud(fake);
+  const hookLog = { status: [], error: [] };
+  setCloudHooks({ status: (s) => hookLog.status.push(s), error: (t) => hookLog.error.push(t) });
+  // 새 사람이 로그인한 것처럼 처음부터 시작한다 (rec 가 있으면 서버에서 읽어 온 기록)
+  const fresh = async (uid = 'u1', rec = null) => { await flushSave(); endSession(); fake.records = {}; fake.writes = []; fake.delay = 0; fake.failures = {}; hookLog.status = []; hookLog.error = []; startSession(uid, rec); };
+  let backupLegacy = null;
+  try { backupLegacy = localStorage.getItem(LEGACY_KEY); } catch (e) {}
   try {
-    localStorage.removeItem(SAVE_KEY);
+    await fresh();
     row(same(loadSave(), { v: 1, owner: '', stages: {} }), '기록이 없을 때', '빈 기록으로 시작해요.');
     row(cleanName('  가   나  ') === '가 나' && cleanName('1234567890123456') === '123456789012' && cleanName(null) === '',
       '이름 다듬기', `"  가   나  " → "${cleanName('  가   나  ')}" · 긴 이름은 12글자까지`);
@@ -110,19 +117,16 @@ async function run() {
     row(totalCoins(loadSave()) === 9, '코인 합계', `5 + 4 = ${totalCoins(loadSave())}`);
     const s = loadSave();
     row(isUnlocked(s, 1) && isUnlocked(s, 2) && isUnlocked(s, 3) && !isUnlocked(s, 4), '스테이지 열림', '깬 스테이지의 다음까지 열려요 (1·2·3 열림, 4 잠김)');
-    localStorage.removeItem(SAVE_KEY);
+    await fresh();
     row(isUnlocked(loadSave(), 1) && !isUnlocked(loadSave(), 2), '처음엔 1번만 열려요', '기록이 없을 때 2번은 잠김');
 
-    localStorage.setItem(SAVE_KEY, '{망가진 글');
-    let broken = true;
-    try { broken = !same(loadSave(), { v: 1, owner: '', stages: {} }); } catch (e) { broken = true; }
-    row(!broken, '망가진 기록', '읽을 수 없는 글이어도 오류 없이 빈 기록으로 시작해요.');
-    localStorage.setItem(SAVE_KEY, JSON.stringify({ owner: '<b>x</b>', stages: { '1': { cleared: true, coins: -5 }, 'abc': { cleared: true, coins: 3 }, '2': { cleared: false, coins: 9 } } }));
-    const odd = loadSave();
+    // 서버에서 이상한 값이 와도 안전하게 읽는다
+    row(same(fromCloud(null), emptySave()) && same(fromCloud('글자'), emptySave()) && same(fromCloud({ nickname: 5, stages: 'x' }), emptySave()), '서버 문서가 이상해도', '없음·글자·엉뚱한 값은 오류 없이 빈 기록으로 읽어요.');
+    const odd = cleanSave({ owner: '<b>x</b>', stages: { '1': { cleared: true, coins: -5 }, 'abc': { cleared: true, coins: 3 }, '2': { cleared: false, coins: 9 } } });
     row(Object.keys(odd.stages).length === 1 && odd.stages['1'].coins === 0, '이상한 기록 걸러내기', `남은 스테이지 ${Object.keys(odd.stages).join(',')} · 음수 코인은 0`);
 
     // 최고기록 (가장 빠른 시간, 1/100초 단위)
-    localStorage.removeItem(SAVE_KEY);
+    await fresh();
     const t1 = recordClear(1, 5, 1234);
     row(t1.newBest && t1.prevTime === null && loadSave().stages['1'].time === 1234, '처음 깨면 그 시간이 최고기록', '12.34초 저장');
     const t2 = recordClear(1, 5, 1500);
@@ -133,17 +137,16 @@ async function run() {
     row(!t4.newBest && loadSave().stages['1'].time === 1100, '같은 시간은 새 기록이 아니에요', '11.00초 = 11.00초');
     const t5 = recordClear(1, 5);
     row(!t5.newBest && loadSave().stages['1'].time === 1100, '시간을 안 주면 기록을 건드리지 않아요', '코인만 저장할 때도 시간이 지워지지 않아요');
-    const t6 = recordClear(2, 4, 900);
+    recordClear(2, 4, 900);
     row(loadSave().stages['1'].time === 1100 && loadSave().stages['2'].time === 900, '스테이지마다 따로 저장', '1번 11.00초 · 2번 9.00초');
-    localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 1, owner: '옛', stages: { '1': { cleared: true, coins: 2 } } }));
-    const old = loadSave();
-    row(old.stages['1'].time === undefined && recordClear(1, 2, 3000).newBest, '시간이 없는 옛 기록', '읽을 수 있고, 다음에 깨면 그 시간이 최고기록이 돼요.');
-    localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 1, owner: 'x', stages: { '1': { cleared: true, coins: 1, time: -5 }, '2': { cleared: true, coins: 1, time: 'abc' }, '3': { cleared: true, coins: 1, time: 12.5 } } }));
+    await fresh('u1', { v: 1, owner: '옛', stages: { '1': { cleared: true, coins: 2 } } });
+    row(loadSave().stages['1'].time === undefined && recordClear(1, 2, 3000).newBest, '시간이 없는 옛 기록', '읽을 수 있고, 다음에 깨면 그 시간이 최고기록이 돼요.');
+    await fresh('u1', { v: 1, owner: 'x', stages: { '1': { cleared: true, coins: 1, time: -5 }, '2': { cleared: true, coins: 1, time: 'abc' }, '3': { cleared: true, coins: 1, time: 12.5 } } });
     const badTime = loadSave();
     row(['1', '2', '3'].every(k => badTime.stages[k] && badTime.stages[k].time === undefined), '이상한 시간 걸러내기', '음수·글자·소수는 버리고 나머지 기록은 살려요.');
 
     // 별 (한 판 안에서 정해진 별 개수의 최고)
-    localStorage.removeItem(SAVE_KEY);
+    await fresh();
     const s1 = recordClear(1, 3, 2000, 1);
     row(s1.starsImproved && s1.prevStars === 0 && loadSave().stages['1'].stars === 1, '처음 깨면 그 별이 저장돼요', '별 1개');
     const s2 = recordClear(1, 5, 1100, 3);
@@ -154,23 +157,23 @@ async function run() {
     row(!s4.starsImproved && loadSave().stages['1'].stars === 3, '별을 안 주면 별을 건드리지 않아요', '3개 유지');
     recordClear(2, 4, 900, 2);
     row(loadSave().stages['1'].stars === 3 && loadSave().stages['2'].stars === 2, '스테이지마다 따로 저장', '1번 별 3개 · 2번 별 2개');
-    localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 1, owner: '옛', stages: { '1': { cleared: true, coins: 2, time: 1500 } } }));
+    await fresh('u1', { v: 1, owner: '옛', stages: { '1': { cleared: true, coins: 2, time: 1500 } } });
     row(loadSave().stages['1'].stars === undefined && recordClear(1, 2, 1500, 1).starsImproved === true, '별이 없던 옛 기록', '읽을 수 있고 코인·시간은 그대로예요. 다음에 깨면 별이 저장돼요.');
-    localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 1, owner: 'x', stages: { '1': { cleared: true, coins: 1, stars: 0 }, '2': { cleared: true, coins: 1, stars: 4 }, '3': { cleared: true, coins: 1, stars: 'abc' } } }));
+    await fresh('u1', { v: 1, owner: 'x', stages: { '1': { cleared: true, coins: 1, stars: 0 }, '2': { cleared: true, coins: 1, stars: 4 }, '3': { cleared: true, coins: 1, stars: 'abc' } } });
     const badStars = loadSave();
     row(['1', '2', '3'].every(k => badStars.stages[k] && badStars.stages[k].stars === undefined && badStars.stages[k].coins === 1), '이상한 별 걸러내기', '0·4·글자는 버리고 나머지 기록은 살려요.');
     const vs = recordClear(1, 1, 1000, 9);
     row(!vs.starsImproved && vs.bestStars === null, '별 개수가 이상하게 들어와도', '1~3이 아니면 저장하지 않아요.');
 
     // 기록 내보내기 · 불러오기 (파일 글을 만들고 검사하는 규칙)
-    localStorage.removeItem(SAVE_KEY);
+    await fresh();
     setOwner('토끼'); recordClear(1, 5, 1100, 3); recordClear(2, 4, 900, 2);
     const cur = loadSave();
     const fileText = makeExportText(cur);
     let fileObj = null;
     try { fileObj = JSON.parse(fileText); } catch (e) {}
     row(!!fileObj && same(Object.keys(fileObj).sort(), ['app', 'exportedAt', 'owner', 'stages', 'v']) && fileObj.app === 'platformer-save' && fileObj.v === 1,
-      '내보낸 파일 모양', '앱 표시 · 버전 · 날짜 · 이름 · 스테이지 기록만 들어 있어요 (다른 정보는 없어요).');
+      '내보낸 파일 모양', '앱 표시 · 버전 · 날짜 · 이름 · 스테이지 기록만 들어 있어요 (uid·메일 같은 다른 정보는 없어요).');
     const back = parseImport(fileText, STAGES);
     row(back.ok && same(back.save, cur) && back.dropped === 0, '내보냈다가 불러오면 똑같아요', `이름 ${back.ok ? back.save.owner : '?'} · 스테이지 ${back.ok ? Object.keys(back.save.stages).length : '?'}개`);
     row(same(loadSave(), cur), '파일 검사만으로는 기록이 바뀌지 않아요', '검사는 읽기만 해요.');
@@ -192,39 +195,84 @@ async function run() {
       '이상한 값은 걸러내고 나머지는 살려요', mixed.ok ? `남은 스테이지 ${Object.keys(mixed.save.stages)} · 없는 스테이지·망가진 기록 ${mixed.dropped}개 뺌 · 코인은 스테이지 코인 수까지만` : mixed.error);
     const onlyOwner = parseImport(JSON.stringify({ app: 'platformer-save', v: 1, owner: '새 기기', stages: {} }), STAGES);
     row(onlyOwner.ok && onlyOwner.save.owner === '새 기기', '이름만 있는 파일도 불러와요', '아직 스테이지를 안 깬 기록');
-    localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 1, owner: '다른 사람', stages: {} }));
+    await fresh('u1', { v: 1, owner: '다른 사람', stages: {} });
     const rep = replaceSave(back.save);
-    row(rep.saved && same(loadSave(), cur), '바꾸기를 하면 파일의 기록이 돼요', '지금 기록이 파일의 기록으로 통째로 바뀌어요.');
+    const repDone = await flushSave();
+    row(rep.saved && repDone.ok && same(loadSave(), cur) && fake.records.u1.nickname === '토끼', '바꾸기를 하면 파일의 기록이 내 계정에 저장돼요', '지금 기록이 파일의 기록으로 통째로 바뀌고 서버에도 올라가요.');
 
-    // 주인 보관 (주인별 랭킹)
-    localStorage.removeItem(SAVE_KEY); localStorage.removeItem(OWNERS_KEY);
-    row(same(archivedNames(), []) && same(loadOwners(), {}), '보관된 주인이 없을 때', '빈 보관함으로 시작해요.');
-    setOwner('토끼'); recordClear(1, 5, 1100, 3); recordClear(2, 4, 900, 2);
-    const mine = loadSave();
-    const n1 = startNewOwner();
-    row(n1.archived === '토끼' && n1.saved && same(loadSave(), { v: 1, owner: '', stages: {} }) && same(loadOwners()['토끼'].stages, mine.stages),
-      '"새 주인으로 시작"은 지금 주인을 보관하고 기록을 비워요', `보관: ${archivedNames().join(', ')} · 지금 기록: 이름 없음`);
-    setOwner('고양이'); recordClear(1, 5, 900, 3);
-    startNewOwner();
-    row(same(archivedNames().sort(), ['고양이', '토끼']), '주인이 여럿 보관돼요', archivedNames().join(', '));
-    const tk1 = takeArchivedOwner('토끼');
-    row(!!tk1 && same(tk1, mine) && same(loadSave(), mine) && same(archivedNames(), ['고양이']), '같은 이름을 쓰면 보관된 주인으로 이어 해요', '토끼의 기록이 그대로 돌아오고 보관함에서는 빠져요.');
-    const tNone = takeArchivedOwner('없는사람'), tEmpty = takeArchivedOwner('');
-    row(tNone === null && tEmpty === null && same(loadSave(), mine) && same(archivedNames(), ['고양이']), '보관에 없는 이름은 아무것도 바꾸지 않아요', '없는 이름·빈 이름');
-    localStorage.removeItem(SAVE_KEY);
-    const n3 = startNewOwner();
-    row(n3.archived === null && same(archivedNames(), ['고양이']), '이름 없는 기록은 보관하지 않아요', '보관함은 그대로');
-    localStorage.setItem(OWNERS_KEY, '{망가진');
-    row(same(loadOwners(), {}), '망가진 보관함', '오류 없이 빈 보관함으로 읽어요.');
-    localStorage.setItem(OWNERS_KEY, JSON.stringify({ v: 1, owners: {
-      ' 공백 ': { stages: { '1': { cleared: true, coins: 1 } } }, '': { stages: {} }, '열두글자를넘는아주아주긴이름': { stages: {} },
-      '정상': { stages: { '1': { cleared: true, coins: 2, stars: 3 }, '9x': { cleared: true, coins: 1 } } } } }));
-    const co = loadOwners();
-    row(same(Object.keys(co), ['정상']) && same(Object.keys(co['정상'].stages), ['1']), '이상한 보관 기록 걸러내기', '다듬은 이름과 다른 이름·빈 이름·이상한 스테이지는 버리고 정상은 살려요.');
+    // ----- 로그인한 사람의 기록을 서버(Firestore)에 올리는 규칙 -----
+    await fresh('u1');
+    setOwner('토끼'); recordClear(1, 5, 1100, 3);
+    const done1 = await flushSave();
+    const doc1 = fake.records.u1;
+    const allowedKeys = ['v', 'uid', 'nickname', 'stages', 'updatedAt'];
+    row(done1.ok && !!doc1 && doc1.uid === 'u1' && doc1.nickname === '토끼' && doc1.stages['1'].stars === 3, '기록이 서버 문서(records/uid)에 올라가요', `uid ${doc1 && doc1.uid} · 별명 ${doc1 && doc1.nickname} · 스테이지 ${doc1 && Object.keys(doc1.stages)}`);
+    row(Object.keys(doc1).every(k => allowedKeys.includes(k)) && !/displayName|email|photoURL|phoneNumber/i.test(JSON.stringify(doc1)), 'Google 이름·메일은 문서에 없어요', `문서 칸: ${Object.keys(doc1).join(', ')}`);
+    row(same(Object.keys(toCloud(loadSave(), 'u1')), ['v', 'uid', 'nickname', 'stages']) && same(fromCloud(toCloud(loadSave(), 'u1')), loadSave()), '서버에 보내는 모양과 읽어 오는 모양이 맞아요', 'toCloud → fromCloud 하면 똑같아요.');
+    endSession();
+    fake.writes = [];
+    const offline = recordClear(1, 3);
+    await flushSave();
+    row(offline.saved === false && fake.writes.length === 0, '로그인 전에는 서버에 올리지 않아요', '저장할 수 없다고 알려 줘요(saved: false).');
+    await fresh('u1');
+    setOwner('A');
+    endSession(); startSession('u2', null);
+    row(loadSave().owner === '' && Object.keys(loadSave().stages).length === 0 && sessionUid() === 'u2', '로그아웃하면 다음 사람에게 기록이 안 보여요', 'u1 의 별명이 u2 에게 남지 않아요.');
+
+    // 저장 상태(저장 중 → 저장했어요), 실패와 다시 저장, 여러 번 바뀌어도 마지막 모습으로
+    await fresh('u1'); fake.delay = 25;
+    setOwner('토끼'); recordClear(1, 5, 1100, 3);
+    await flushSave();
+    row(hookLog.status.includes('saving') && hookLog.status[hookLog.status.length - 1] === 'saved' && hookLog.error[hookLog.error.length - 1] === null, '저장 상태가 저장 중 → 저장했어요로 바뀌어요', hookLog.status.join(' → '));
+    await fresh('u1');
+    setOwner('토끼');
+    await flushSave();
+    fake.failNext('write', 'permission-denied');
+    recordClear(1, 5, 1100, 3);
+    const failed = await flushSave();
+    const errText = hookLog.error[hookLog.error.length - 1] || '';
+    row(!failed.ok && hookLog.status[hookLog.status.length - 1] === 'error' && errText.includes('저장하지 못했어요') && errText.includes('권한') && errText.includes('(오류 코드: permission-denied)') && !fake.records.u1.stages['1'],
+      '저장이 실패하면 이유를 알려 줘요', errText);
+    row(loadSave().stages['1'] && loadSave().stages['1'].stars === 3, '저장이 실패해도 화면의 기록은 그대로예요', '메모리의 기록은 남아 있어요.');
+    retrySave();
+    const retried = await flushSave();
+    row(retried.ok && fake.records.u1.stages['1'].stars === 3 && hookLog.error[hookLog.error.length - 1] === null, '"다시 저장"을 누르면 올라가요', '실패했던 기록이 서버에 올라가고 오류 글이 지워져요.');
+    await fresh('u1'); fake.delay = 20;
+    setOwner('토끼'); recordClear(1, 5, 1100, 3); recordClear(2, 4, 900, 2); recordClear(3, 7, 1500, 2);
+    await flushSave();
+    row(fake.writes.length <= 2 && Object.keys(fake.records.u1.stages).length === 3, '빠르게 여러 번 바뀌어도 마지막 모습이 올라가요', `서버에 ${fake.writes.length}번 쓰고 스테이지 ${Object.keys(fake.records.u1.stages).length}개가 모두 들어갔어요.`);
+    fake.delay = 0;
+
+    // 오류 글: 코드마다 이유와 고치는 방법
+    const msgCases = [
+      ['auth/popup-blocked', 'login', '팝업'], ['auth/popup-closed-by-user', 'login', '닫혔어요'], ['auth/unauthorized-domain', 'login', '승인된 도메인'],
+      ['auth/operation-not-allowed', 'login', '사용 설정'], ['auth/network-request-failed', 'login', '인터넷'], ['permission-denied', 'write', 'firestore.rules'],
+      ['unavailable', 'read', '인터넷'], ['not-found', 'read', 'Firestore Database'], ['unauthenticated', 'write', '다시 로그인'], ['app/sdk-load-failed', 'init', '새로고침'],
+    ];
+    const msgBad = msgCases.filter(([code, where, word]) => { const t = explainError({ code }, where); return !t.includes(word) || !t.includes(`(오류 코드: ${code})`); }).map(c => c[0]);
+    row(msgBad.length === 0, '오류 글이 이유와 고치는 방법을 알려 줘요', msgBad.length ? '모자란 코드: ' + msgBad.join(', ') : `${msgCases.length}가지 코드를 확인했어요.`);
+    const unknown = explainError({ code: 'weird/code', message: '이상한 일' }, 'write');
+    row(unknown.includes('weird/code') && unknown.includes('저장하지 못했어요') && explainError(null, 'login').includes('로그인에 실패했어요'), '모르는 오류도 코드와 함께 보여 줘요', unknown);
+
+    // 이 기기에 예전에 저장하던 기록(로그인 전 버전)
+    localStorage.removeItem(LEGACY_KEY);
+    row(readLegacyLocal() === null, '예전 기록이 없을 때', 'null 로 읽어요.');
+    localStorage.setItem(LEGACY_KEY, JSON.stringify({ v: 1, owner: '예전이', stages: { '1': { cleared: true, coins: 5, time: 1000, stars: 3 } } }));
+    const lg = readLegacyLocal();
+    row(!!lg && lg.owner === '예전이' && lg.stages['1'].stars === 3, '예전 기록을 읽어요', `${lg && lg.owner} · 스테이지 ${lg && Object.keys(lg.stages).length}개`);
+    localStorage.setItem(LEGACY_KEY, '{망가진');
+    row(readLegacyLocal() === null, '망가진 예전 기록은 건너뛰어요', '오류 없이 없는 것으로 봐요.');
+    localStorage.setItem(LEGACY_KEY, JSON.stringify({ v: 1, owner: '', stages: {} }));
+    row(readLegacyLocal() === null, '비어 있는 예전 기록은 옮길 게 없어요', '이름도 스테이지도 없으면 null');
+    localStorage.setItem(LEGACY_KEY, JSON.stringify({ v: 1, owner: '예전이', stages: {} }));
+    clearLegacyLocal();
+    row(localStorage.getItem(LEGACY_KEY) === null, '예전 기록 지우기', '옮긴 뒤에만 부르는 함수예요.');
   } finally {
-    try { backupOwners === null ? localStorage.removeItem(OWNERS_KEY) : localStorage.setItem(OWNERS_KEY, backupOwners); } catch (e) {}
-    try { backup === null ? localStorage.removeItem(SAVE_KEY) : localStorage.setItem(SAVE_KEY, backup); } catch (e) {}
+    try { backupLegacy === null ? localStorage.removeItem(LEGACY_KEY) : localStorage.setItem(LEGACY_KEY, backupLegacy); } catch (e) {}
+    endSession();
+    setCloudHooks({ status() {}, error() {} });
   }
+
 
   // 3. 움직임 규칙
   const flat = { width: 1000, start: { x: 100, y: 300 }, platforms: [{ x: 0, y: 390, w: 1000, h: 60 }], coins: [], goal: { x: 990, y: 0, w: 5, h: 5 } };
@@ -346,269 +394,399 @@ async function run() {
     row(nobody.overall.length === 0 && nobody.perStage.every(s => s.rows.length === 0), '아무도 없을 때', '빈 랭킹으로 오류 없이 나와요.');
   }
 
-  // 5. 게임 화면 (파일 내용과 모양)
-  let html = null;
-  try { html = await (await fetch('../index.html')).text(); } catch (e) {}
+  // 4-5. 서버에서 받은 여러 사람의 기록 → 랭킹 입력
+  {
+    const recs = [
+      { uid: 'u1', nickname: '나', stages: { '1': { cleared: true, coins: 5, time: 1000, stars: 3 } } },
+      { uid: 'u2', nickname: '토끼', stages: { '1': { cleared: true, coins: 5, time: 900, stars: 3 } } },
+      { uid: 'u3', nickname: '토끼', stages: { '1': { cleared: true, coins: 2, time: 1500, stars: 1 } } },
+      { uid: 'u4', nickname: '나', stages: {} },
+      { uid: 'u5', nickname: '  ', stages: { '1': { cleared: true, coins: 1 } } },
+      '글자', null,
+      { uid: 'u6', nickname: '큰기록', stages: { '1': { cleared: true, coins: 99, time: 500, stars: 3 }, '9': { cleared: true, coins: 1 } } },
+    ];
+    const owners = ownersFromRecords(recs, 'u1', '나', STAGES);
+    const names = Object.keys(owners).sort();
+    row(same(names, ['나 #u4', '큰기록', '토끼', '토끼 #u3'].sort()), '서버 기록 → 랭킹 입력: 나는 빼고, 같은 별명은 구분해요', names.join(' · '));
+    row(owners['큰기록'].stages['1'].coins === 5 && !owners['큰기록'].stages['9'], '남이 쓴 값은 믿지 않고 거른다', '코인은 스테이지의 코인 수(5)까지만, 없는 스테이지(9)는 뺐어요.');
+    row(Object.keys(ownersFromRecords(null, 'u1', '나', STAGES)).length === 0, '서버 기록이 없어도 오류가 없어요', '빈 랭킹');
+  }
+
+  // 5. 게임 파일 읽기 (index.html · save.js · firestore.rules)
+  let html = null, saveJs = '', rulesTxt = '';
+  try {
+    html = await (await fetch('../index.html')).text();
+    saveJs = await (await fetch('../save.js')).text();
+    rulesTxt = await (await fetch('../firestore.rules')).text();
+  } catch (e) { html = null; }
+  rulesTxt = rulesTxt.replace(/\/\/.*$/gm, '');   // 주석은 빼고 규칙만 본다
   if (html === null) {
-    skip('화면 글 확인', '파일을 두 번 눌러 열면 읽을 수 없어요. GitHub Pages 주소에서 이 페이지를 열거나 간단한 서버로 열면 확인돼요.');
+    skip('파일 글 확인 (화면·save.js·보안 규칙)', '파일을 두 번 눌러 열면 읽을 수 없어요. GitHub Pages 주소에서 이 페이지를 열거나 간단한 서버로 열면 확인돼요.');
   } else {
     row(/name="viewport"[^>]*width=device-width/.test(html), '화면 폭에 맞추기 (viewport)', 'width=device-width 가 있어요.');
-    row(/id="login-slot"[^>]*>\s*로그인 자리\s*</.test(html), '로그인 단추 자리', '"로그인 자리" 라고만 쓰여 있어요.');
-    const slot = html.match(/<div id="login-slot"[^>]*>[\s\S]*?<\/div>/);
-    row(!!slot && !/<(button|a|input|form)/i.test(slot[0]) && !/type="password"/i.test(html), '로그인은 아직 없어요', '로그인 자리는 빈 칸이고, 비밀번호 입력도 없어요.');
-    const files = { 'index.html': html };
-    for (const f of ['physics.js', 'stages.js']) { try { files[f] = await (await fetch('../' + f)).text(); } catch (e) { files[f] = ''; } }
-    const storageWords = /localStorage|sessionStorage|indexedDB|document\.cookie/;
-    const where = Object.keys(files).filter(f => storageWords.test(files[f]));
-    row(where.length === 0, '저장 코드는 save.js 한곳에만', where.length ? `다른 파일에도 있어요: ${where.join(', ')}` : 'index.html · physics.js · stages.js 에는 저장 코드가 없어요.');
-    row(!/(sk-|api[_-]?key|password)\s*[:=]/i.test(html), '비밀번호·키가 적혀 있지 않아요', 'index.html 확인');
+    const slotHtml = (html.match(/<div id="login-slot"[^>]*>[\s\S]*?<\/div>/) || [''])[0];
+    row(/id="login-btn"[^>]*>\s*Google 로 로그인\s*</.test(slotHtml) && /id="logout-btn"[^>]*>\s*로그아웃\s*</.test(slotHtml), '비워 둔 자리에 로그인·로그아웃 단추가 있어요', '"Google 로 로그인" · "로그아웃"');
+    const loginBody = (saveJs.match(/login\(\) \{([\s\S]*?)\n    \},/) || ['', ''])[1];
+    row(/signInWithPopup/.test(loginBody) && !/signInWithRedirect/.test(saveJs) && !/await/.test(loginBody), '로그인은 새 창(팝업)으로, 단추를 누른 순간 바로 열어요', 'signInWithPopup 을 await 없이 바로 불러요 (팝업 차단 방지). 새 페이지로 넘어가는 방식은 쓰지 않아요.');
+    row(FIREBASE_CONFIG.projectId === 'my-cheer-af1eb' && FIREBASE_CONFIG.authDomain === 'my-cheer-af1eb.firebaseapp.com' && FIREBASE_CONFIG.appId === '1:348586918683:web:b3611ef079375ccee709be'
+        && FIREBASE_CONFIG.storageBucket === 'my-cheer-af1eb.firebasestorage.app' && FIREBASE_CONFIG.messagingSenderId === '348586918683' && /^AIza[\w-]{35}$/.test(FIREBASE_CONFIG.apiKey),
+      'Firebase 설정값이 알려 주신 그대로예요', `프로젝트 ${FIREBASE_CONFIG.projectId} · 설정값은 save.js 한곳에만 있어요.`);
+    row(sdkUrl('app') === 'https://www.gstatic.com/firebasejs/13.4.0/firebase-app.js' && sdkUrl('auth').endsWith('/13.4.0/firebase-auth.js') && sdkUrl('firestore').endsWith('/13.4.0/firebase-firestore.js'),
+      'Firebase SDK 는 알려 주신 13.4.0 주소를 써요', sdkUrl('app'));
+    const others = { 'index.html': html };
+    for (const f of ['physics.js', 'stages.js', 'ranking.js']) { try { others[f] = await (await fetch('../' + f)).text(); } catch (e) { others[f] = ''; } }
+    const cloudWords = /localStorage|sessionStorage|indexedDB|document\.cookie|firebasejs|gstatic|getFirestore|signInWith|setDoc|getDoc|initializeApp|apiKey|AIza/;
+    const where = Object.keys(others).filter(f => cloudWords.test(others[f]));
+    row(where.length === 0, '로그인·저장 코드는 save.js 한곳에만', where.length ? `다른 파일에도 있어요: ${where.join(', ')}` : 'index.html · physics.js · stages.js · ranking.js 에는 로그인·저장 코드와 Firebase 설정값이 없어요.');
+    const personal = /displayName|email|photoURL|phoneNumber|getAdditionalUserInfo|providerData/i;
+    row(!personal.test(saveJs) && !personal.test(html), 'Google 이름·메일·사진은 읽지도 저장하지도 않아요', 'displayName · email · photoURL 같은 칸을 쓰는 코드가 없어요. 로그인 상태에서 uid 만 꺼내 써요.');
+    row(!/(sk-|password)\s*[:=]/i.test(html) && !/type="password"/i.test(html), '비밀번호·비밀 키가 적혀 있지 않아요', 'index.html 확인 (Firebase 설정값은 공개해도 되는 이름표라 save.js 에 있어요).');
 
-    // 폰과 컴퓨터 폭에서 잘리는지 (게임을 실제로 열어 봄)
-    for (const [w, label] of [[360, '폰 (360)'], [768, '태블릿 (768)'], [1280, '컴퓨터 (1280)']]) {
-      try {
-        const f = await loadFrame('../index.html', w);
-        const d = f.contentDocument;
-        const flow = d.documentElement.scrollWidth <= w;
-        const slotRect = d.getElementById('login-slot').getBoundingClientRect();
-        const slotIn = slotRect.left >= 0 && slotRect.right <= w;
-        const nameShown = !d.getElementById('name-screen').hidden || !d.getElementById('select-screen').hidden;
-        row(flow && slotIn && nameShown, `화면 폭 ${label}`, `가로로 넘치지 않고 로그인 자리가 보여요 (내용 폭 ${d.documentElement.scrollWidth})`);
-        f.remove();
-      } catch (e) {
-        skip(`화면 폭 ${label}`, '게임 화면을 이 페이지 안에서 열 수 없었어요: ' + e.message);
-      }
+    // 보안 규칙 파일 (firestore.rules)
+    const clause = (re) => (rulesTxt.match(re) || ['', ''])[1] || '';
+    const readClause = clause(/allow read:([^;]*);/);
+    const writeClause = clause(/allow create, update:([^;]*);/);
+    const deleteClause = clause(/allow delete:([^;]*);/);
+    row(/rules_version\s*=\s*'2'/.test(rulesTxt) && /service cloud\.firestore/.test(rulesTxt) && /match \/records\/\{uid\}/.test(rulesTxt), '보안 규칙 파일이 있고 records/{uid} 를 다뤄요', 'week-07/firestore.rules');
+    row(/if true/.test(readClause), '읽기는 누구나', readClause.trim());
+    row(/request\.auth != null/.test(writeClause) && /request\.auth\.uid == uid/.test(writeClause) && /validRecord\(/.test(writeClause), '쓰기는 로그인한 사람이 자기 문서에만, 모양이 맞을 때만', writeClause.replace(/\s+/g, ' ').trim());
+    row(/request\.auth != null/.test(deleteClause) && /request\.auth\.uid == uid/.test(deleteClause), '지우기는 자기 문서만', deleteClause.replace(/\s+/g, ' ').trim());
+    row(/match \/\{document=\*\*\}\s*\{[^}]*allow read, write: if false/.test(rulesTxt) && !/allow (read, )?write:\s*if true/.test(rulesTxt) && !/if request\.auth != null\s*;/.test(rulesTxt), '그 밖의 경로는 모두 막고, 아무나 쓸 수 있는 줄이 없어요', '모든 경로 거절 + 열린 쓰기 줄 없음');
+    const open = (rulesTxt.match(/\{/g) || []).length, close = (rulesTxt.match(/\}/g) || []).length, po = (rulesTxt.match(/\(/g) || []).length, pc = (rulesTxt.match(/\)/g) || []).length;
+    row(open === close && po === pc, '규칙 파일의 괄호가 맞아요', `{ ${open}개 · } ${close}개 · ( ${po}개 · ) ${pc}개`);
+    const listOf = (re) => ((rulesTxt.match(re) || ['', ''])[1].match(/'([^']+)'/g) || []).map(x => x.replace(/'/g, ''));
+    const onlyKeys = listOf(/hasOnly\(\[([^\]]*)\]\)/), mustKeys = listOf(/hasAll\(\[([^\]]*)\]\)/);
+    const payloadKeys = Object.keys(toCloud(emptySave(), 'u1'));
+    row(payloadKeys.every(k => onlyKeys.includes(k)) && onlyKeys.includes('updatedAt') && mustKeys.every(k => payloadKeys.includes(k)) && payloadKeys.every(k => mustKeys.includes(k)),
+      '규칙이 허용하는 칸과 저장 코드가 보내는 칸이 같아요', `규칙: ${onlyKeys.join(', ')} · 보내는 칸: ${payloadKeys.join(', ')} + updatedAt`);
+    // 규칙의 검사 논리를 같은 식으로 흉내 내서 좋은 문서와 나쁜 문서를 가려 보는 시험 (진짜 Firestore 가 아니라 규칙을 읽고 만든 흉내예요)
+    const valid = (data, uid) => {
+      const keys = Object.keys(data);
+      return keys.every(k => onlyKeys.includes(k)) && mustKeys.every(k => keys.includes(k)) && data.v === 1 && data.uid === uid
+        && typeof data.nickname === 'string' && data.nickname.length >= 1 && data.nickname.length <= 12
+        && !!data.stages && typeof data.stages === 'object' && !Array.isArray(data.stages) && Object.keys(data.stages).length <= 50
+        && (!('updatedAt' in data) || data.updatedAt === 'REQUEST_TIME');
+    };
+    const allowWrite = (auth, uid, data) => !!auth && auth.uid === uid && valid(data, uid);
+    const good = { ...toCloud({ owner: '토끼', stages: { '1': { cleared: true, coins: 5 } } }, 'u1'), updatedAt: 'REQUEST_TIME' };
+    const cases = [
+      ['정상', allowWrite({ uid: 'u1' }, 'u1', good), true],
+      ['로그인 안 함', allowWrite(null, 'u1', good), false],
+      ['남의 문서', allowWrite({ uid: 'u2' }, 'u1', good), false],
+      ['uid 를 속임', allowWrite({ uid: 'u1' }, 'u1', { ...good, uid: 'u2' }), false],
+      ['모르는 칸(email)', allowWrite({ uid: 'u1' }, 'u1', { ...good, email: 'a@b.c' }), false],
+      ['별명 없음', allowWrite({ uid: 'u1' }, 'u1', { ...good, nickname: '' }), false],
+      ['별명 13글자', allowWrite({ uid: 'u1' }, 'u1', { ...good, nickname: '가'.repeat(13) }), false],
+      ['stages 가 글자', allowWrite({ uid: 'u1' }, 'u1', { ...good, stages: 'x' }), false],
+      ['updatedAt 이 서버 시간이 아님', allowWrite({ uid: 'u1' }, 'u1', { ...good, updatedAt: 'later' }), false],
+    ];
+    const wrongCase = cases.filter(([, got, want]) => got !== want).map(c => c[0]);
+    row(wrongCase.length === 0, '규칙 논리 흉내 시험: 좋은 문서는 통과, 나쁜 문서는 거절', wrongCase.length ? '틀린 것: ' + wrongCase.join(', ') : cases.map(c => `${c[0]} → ${c[2] ? '허용' : '거절'}`).join(' · '));
+
+    // 진짜 Firebase 모듈을 내려받을 수 있는지 (인터넷이 없으면 건너뜀)
+    try {
+      const mod = await Promise.race([import(sdkUrl('firestore')), new Promise((_, rej) => setTimeout(() => rej(new Error('시간 초과')), 8000))]);
+      row(typeof mod.getFirestore === 'function' && typeof mod.setDoc === 'function', 'Firebase SDK(firestore 13.4.0)를 내려받을 수 있어요', '실제 주소에서 모듈을 불러와 getFirestore · setDoc 이 있는지 확인했어요.');
+    } catch (e) {
+      skip('Firebase SDK 내려받기', '이 환경에서는 gstatic 주소를 불러오지 못했어요: ' + e.message);
     }
   }
 
-  // 6. 게임 화면에서 최고기록 (게임을 실제로 열어 깬 것처럼 만들어 봄. 진짜 기록은 빌려 쓰고 돌려놓음)
-  if (html !== null) {
-    let f = null, ls = null, saved = null;
+  // ===== 여기부터는 게임 화면을 실제로 열어서 단추를 눌러 보는 시험 (시험용 가짜 서버 ?fake=1) =====
+  const waitFor = async (fn, ms = 3000) => {
+    const end = Date.now() + ms;
+    while (Date.now() < end) { try { if (fn()) return true; } catch (e) { /* 아직 준비 안 됨 */ } await new Promise(r => setTimeout(r, 40)); }
+    try { return !!fn(); } catch (e) { return false; }
+  };
+  const openGame = async (width, query = '?fake=1') => {
+    const f = await loadFrame('../index.html' + query, width);
+    const win = f.contentWindow, doc = f.contentDocument;
+    const $$ = (id) => doc.getElementById(id);
+    const g = {
+      f, win, doc, $$, fake: win.fakeCloud,
+      text: (id) => $$(id).innerText.replace(/\s+/g, ' '),
+      // 접힌 "더 보기" 안은 안 보이는 것으로 친다
+      shown: (el) => { if (!el || el.getClientRects().length === 0) return false; const d = el.closest('details'); return !(d && !d.open && !el.closest('summary')); },
+      screen: () => ['login', 'name', 'select', 'play', 'ranking'].find(s => !$$(s + '-screen').hidden) || null,
+    };
+    await waitFor(() => g.screen() === 'login' && !$$('login-btn-big').disabled || /initfail/.test(query));
+    return g;
+  };
+  // 서버에 있는 기록을 만들어 둔다 (이미 가입한 사람처럼)
+  const putRecord = (g, uid, nickname, stages) => { g.fake.records[uid] = { v: 1, uid, nickname, stages: stages || {}, updatedAt: 'x' }; };
+  const stageOf = (coins, time, stars) => ({ cleared: true, coins, ...(time ? { time } : {}), ...(stars ? { stars } : {}) });
+  const signIn = async (g, uid) => { g.fake.nextUid = uid; g.$$('login-btn-big').click(); await waitFor(() => g.screen() === 'select' || g.screen() === 'name'); };
+  const submitName = async (g, name, then = 'select') => {
+    g.$$('name-input').value = name;
+    g.$$('name-form').dispatchEvent(new g.win.Event('submit', { cancelable: true }));
+    await waitFor(() => g.screen() === then);
+  };
+  const flush = (g) => g.win.eval('flushSave()');
+  const withGame = async (title, width, query, fn) => {
+    let g = null, legacy = null;
     try {
-      f = await loadFrame('../index.html', 800);
-      const win = f.contentWindow;
-      ls = win.localStorage;
-      saved = ls.getItem(SAVE_KEY);
-      ls.removeItem(SAVE_KEY);
+      g = await openGame(width, query);
+      legacy = g.win.localStorage.getItem(LEGACY_KEY);   // 이 기기의 예전 기록은 빌려 쓰고 돌려놓는다
+      g.win.localStorage.removeItem(LEGACY_KEY);
+      await fn(g);
+    } catch (e) {
+      skip(title, '게임 화면을 이 페이지 안에서 열거나 확인하지 못했어요: ' + e.message);
+    } finally {
+      try { if (g) { legacy === null ? g.win.localStorage.removeItem(LEGACY_KEY) : g.win.localStorage.setItem(LEGACY_KEY, legacy); } } catch (e) {}
+      if (g) g.f.remove();
+    }
+  };
+  const docKeysOk = (rec) => !!rec && Object.keys(rec).every(k => ['v', 'uid', 'nickname', 'stages', 'updatedAt'].includes(k));
+
+  if (html !== null) {
+    // 6. 로그인 화면 · 첫 로그인 · 별명
+    await withGame('로그인 화면과 첫 로그인', 800, '?fake=1', async (g) => {
+      const { $$, text, shown } = g;
+      row(g.screen() === 'login' && shown($$('login-btn')) && $$('login-btn').innerText.trim() === 'Google 로 로그인' && !shown($$('logout-btn')) && $$('who').hidden && $$('total').hidden,
+        '로그인 전에는 로그인 화면과 로그인 단추만 보여요', `${g.screen()} · 단추 "${$$('login-btn').innerText.trim()}" · 로그아웃 ${shown($$('logout-btn')) ? '보임' : '숨김'} · 별명 ${$$('who').hidden ? '숨김' : '보임'}`);
+      row(['name', 'select', 'play', 'ranking'].every(s => $$(s + '-screen').hidden), '로그인 전에는 게임 화면이 열리지 않아요', '이름·스테이지·플레이·랭킹 화면이 모두 숨겨져 있어요.');
+      const lt = text('login-screen');
+      row(lt.includes('로그인하면 열려요') && lt.includes('새 창(팝업)') && lt.includes('Google 이름과 메일은 저장하지 않고'), '로그인 화면이 새 창으로 열린다는 것과 저장 범위를 알려 줘요', lt.slice(0, 120));
+
+      await signIn(g, 'u1');
+      row(g.screen() === 'name' && shown($$('logout-btn')) && !shown($$('login-btn')) && $$('migrate-box').hidden && g.fake.user && g.fake.user.uid === 'u1',
+        '처음 로그인하면 별명을 정하게 해요', `화면 ${g.screen()} · 로그아웃 단추 ${shown($$('logout-btn')) ? '보임' : '숨김'} · 서버에 기록 ${g.fake.records.u1 ? '있음' : '아직 없음'}`);
+      row(!g.fake.records.u1, '별명을 정하기 전에는 서버에 아무것도 만들지 않아요', 'records/u1 없음');
+      await submitName(g, '  토끼  ');
+      await flush(g);
+      const rec = g.fake.records.u1;
+      row(g.screen() === 'select' && !!rec && rec.uid === 'u1' && rec.nickname === '토끼' && Object.keys(rec.stages).length === 0, '별명을 정하면 내 계정에 기록이 만들어져요', `records/u1 = { uid: ${rec && rec.uid}, nickname: ${rec && rec.nickname}, stages: {} }`);
+      row(docKeysOk(rec), '문서에는 uid·별명·기록만 있고 Google 이름·메일은 없어요', `문서 칸: ${rec && Object.keys(rec).join(', ')}`);
+      row(!$$('who').hidden && $$('who').textContent === '토끼' && text('select-title') === '토끼의 기록', '로그인하면 화면에 내 별명이 보여요', `위쪽 "${$$('who').textContent}" · 제목 "${text('select-title')}"`);
+      $$('rename').click();
+      await submitName(g, '고양이');
+      await flush(g);
+      row(g.fake.records.u1.nickname === '고양이' && $$('who').textContent === '고양이' && g.screen() === 'select', '이름 바꾸기도 계정에 저장돼요', `서버 별명: ${g.fake.records.u1.nickname}`);
+    });
+
+    // 7. 이 기기에 있던 예전 기록 가져오기
+    await withGame('예전 기록 가져오기', 800, '?fake=1', async (g) => {
+      const { $$, text, shown } = g;
+      const ls = g.win.localStorage;
+      ls.setItem(LEGACY_KEY, JSON.stringify({ v: 1, owner: '예전이', stages: { '1': stageOf(5, 1000, 3), '2': stageOf(4, 1500, 2) } }));
+      await signIn(g, 'u2');
+      row(g.screen() === 'name' && shown($$('migrate-box')) && $$('migrate-check').checked && text('migrate-box').includes('예전이') && text('migrate-box').includes('깬 스테이지 2개') && $$('name-input').value === '예전이',
+        '이 기기에 예전 기록이 있으면 가져올지 물어요 (기본으로 켜짐)', text('migrate-box'));
+      g.fake.failNext('write', 'permission-denied');
+      await submitName(g, '새별', 'select').catch(() => {});
+      await waitFor(() => !$$('cloud-err').hidden);
+      row(g.screen() === 'name' && !$$('cloud-err').hidden && text('cloud-err-text').includes('권한') && ls.getItem(LEGACY_KEY) !== null, '저장이 실패하면 이 기기의 예전 기록은 지우지 않아요', `${g.screen()} 화면에 남음 · 예전 기록 ${ls.getItem(LEGACY_KEY) ? '그대로' : '지워짐'}`);
+      await submitName(g, '새별');
+      await flush(g);
+      const r2 = g.fake.records.u2;
+      row(g.screen() === 'select' && r2 && r2.nickname === '새별' && r2.stages['1'].stars === 3 && r2.stages['2'].coins === 4 && ls.getItem(LEGACY_KEY) === null && $$('cloud-err').hidden,
+        '가져오기를 켜 두면 예전 기록이 계정에 저장되고, 확인한 뒤에야 이 기기에서 지워요', `서버: ${r2 && r2.nickname} · 스테이지 ${r2 && Object.keys(r2.stages)} · 예전 기록 ${ls.getItem(LEGACY_KEY) === null ? '지움' : '그대로'}`);
+      row(text('who') === '새별' && text('total') === '🪙 9', '가져온 기록이 화면에 보여요', `${text('who')} · ${text('total')}`);
+    });
+    await withGame('예전 기록 가져오지 않기', 800, '?fake=1', async (g) => {
+      const { $$ } = g;
+      const ls = g.win.localStorage;
+      ls.setItem(LEGACY_KEY, JSON.stringify({ v: 1, owner: '예전이', stages: { '1': stageOf(5, 1000, 3) } }));
+      await signIn(g, 'u3');
+      $$('migrate-check').checked = false;
+      await submitName(g, '깨끗이');
+      await flush(g);
+      row(Object.keys(g.fake.records.u3.stages).length === 0 && ls.getItem(LEGACY_KEY) !== null, '가져오기를 끄면 빈 기록으로 시작하고 예전 기록은 그대로 둬요', `서버 스테이지 ${Object.keys(g.fake.records.u3.stages).length}개 · 예전 기록 그대로`);
+    });
+
+    // 8. 이미 계정이 있는 사람: 어느 기기에서 열어도 이어서 보인다 · 저장 · 로그아웃
+    await withGame('이어서 하기와 저장', 800, '?fake=1', async (g) => {
+      const { $$, text } = g;
+      putRecord(g, 'u1', '토끼', { '1': stageOf(5, 1000, 3), '2': stageOf(4, 1500, 2) });
+      await signIn(g, 'u1');
+      const cards = [...g.doc.querySelectorAll('#cards .card')];
+      row(g.screen() === 'select' && text('who') === '토끼' && text('total') === '🪙 9' && cards[0].innerText.includes('별 ★★★') && cards[1].innerText.includes('최고 15.00초') && !cards[2].disabled,
+        '서버에 있던 기록으로 바로 이어서 보여요 (별명·코인·별·최고기록·열린 스테이지)', `${text('who')} · ${text('total')} · ${cards.map(c => c.innerText.replace(/\s+/g, ' ').slice(0, 40)).join(' / ')}`);
+      g.win.eval("startStage(STAGES[2]); run.t = 1000; run.got.fill(true); finish();");
+      await flush(g);
+      const r = g.fake.records.u1;
+      row(r.stages['3'] && r.stages['3'].coins === 9 && r.stages['3'].time === 1667 && r.stages['3'].stars === 3 && r.stages['1'].stars === 3 && docKeysOk(r), '스테이지를 깨면 바로 서버에 저장돼요', `스테이지 3 = ${JSON.stringify(r.stages['3'])}`);
+      row(text('cloud-status') === '☁ 저장했어요' && $$('cloud-err').hidden, '저장되면 위쪽에 "☁ 저장했어요"가 보여요', text('cloud-status'));
+
+      // 저장 실패 → 이유와 다시 저장
+      g.win.eval("showSelect();");
+      g.fake.failNext('write', 'permission-denied');
+      g.win.eval("startStage(STAGES[0]); run.t = 500; run.got.fill(true); finish();");
+      await waitFor(() => !$$('cloud-err').hidden);
+      row(!$$('cloud-err').hidden && text('cloud-err-text').includes('기록을 저장하지 못했어요') && text('cloud-err-text').includes('권한') && !$$('retry-save').hidden && text('cloud-status') === '☁ 저장하지 못했어요',
+        '저장이 실패하면 이유를 빨간 줄에 보여 주고 "다시 저장" 단추가 나와요', text('cloud-err-text'));
+      row(g.fake.records.u1.stages['1'].time === 1000, '실패한 동안 서버의 기록은 그대로예요', '1번 최고 10.00초 그대로');
+      $$('retry-save').click();
+      await flush(g);
+      row($$('cloud-err').hidden && g.fake.records.u1.stages['1'].time === 833 && text('cloud-status') === '☁ 저장했어요', '"다시 저장"을 누르면 올라가고 빨간 줄이 사라져요', `1번 최고 ${g.fake.records.u1.stages['1'].time / 100}초`);
+
+      // 저장이 안 끝났으면 로그아웃하지 않는다
+      g.win.eval("showSelect();");
+      g.fake.failNext('write', 'unavailable');
+      g.win.eval("setOwner('토끼2'); save = loadSave(); refreshHeader();");
+      await waitFor(() => !$$('cloud-err').hidden);
+      $$('logout-btn').click();
+      await waitFor(() => text('cloud-err-text').includes('로그아웃하지 않았어요'));
+      row(text('cloud-err-text').includes('로그아웃하지 않았어요') && g.fake.user !== null && g.screen() === 'select', '저장이 안 끝났으면 로그아웃하지 않고 이유를 알려 줘요', text('cloud-err-text').slice(0, 90));
+      $$('retry-save').click();
+      await flush(g);
+      $$('logout-btn').click();
+      await waitFor(() => g.screen() === 'login');
+      row(g.screen() === 'login' && g.fake.user === null && g.fake.records.u1.nickname === '토끼2' && !g.doc.body.innerText.includes('토끼2') && $$('who').hidden, '로그아웃하면 로그인 화면으로 돌아가고 내 별명은 화면에서 사라져요', `서버 별명: ${g.fake.records.u1.nickname} · 화면에 별명 ${g.doc.body.innerText.includes('토끼2') ? '남음' : '없음'}`);
+      putRecord(g, 'u9', '다른사람', { '1': stageOf(2, 2000, 1) });
+      await signIn(g, 'u9');
+      row(g.screen() === 'select' && text('who') === '다른사람' && text('total') === '🪙 2' && !g.doc.body.innerText.includes('토끼2'), '다른 사람이 같은 기기로 로그인하면 자기 기록만 보여요', `${text('who')} · ${text('total')}`);
+    });
+
+    // 9. 로그인·불러오기 오류가 화면에 보여요
+    await withGame('로그인 오류', 800, '?fake=1', async (g) => {
+      const { $$, text, shown } = g;
+      g.fake.failNext('login', 'auth/popup-blocked');
+      $$('login-btn-big').click();
+      await waitFor(() => !$$('cloud-err').hidden);
+      row(g.screen() === 'login' && text('cloud-err-text').includes('로그인에 실패했어요') && text('cloud-err-text').includes('팝업') && text('cloud-err-text').includes('(오류 코드: auth/popup-blocked)') && $$('retry-save').hidden,
+        '로그인이 실패하면 이유를 화면에 보여 줘요 (팝업이 막힌 경우)', text('cloud-err-text'));
+      await waitFor(() => !$$('login-btn-big').disabled);
+      row(!$$('login-btn-big').disabled && !$$('login-btn').disabled, '로그인이 실패해도 다시 누를 수 있어요', '단추가 다시 켜져요.');
+      g.fake.failNext('login', 'auth/unauthorized-domain');
+      $$('login-btn').click();
+      await waitFor(() => text('cloud-err-text').includes('승인된 도메인'));
+      row(text('cloud-err-text').includes('승인된 도메인') && text('cloud-err-text').includes('Authentication'), '승인되지 않은 주소면 콘솔에서 할 일을 알려 줘요', text('cloud-err-text').slice(0, 120));
+      await waitFor(() => !$$('login-btn-big').disabled);
+      putRecord(g, 'u1', '토끼', { '1': stageOf(5, 1000, 3) });
+      g.fake.failNext('read', 'unavailable');
+      await signIn(g, 'u1').catch(() => {});
+      await waitFor(() => text('cloud-err-text').includes('기록을 불러오지 못했어요'));
+      row(g.screen() === 'login' && text('cloud-err-text').includes('인터넷') && shown($$('reload-btn')) && text('login-status').includes('불러오지 못했어요'),
+        '기록을 불러오지 못하면 이유와 "다시 불러오기" 단추를 보여 줘요', `${text('login-status')} · ${text('cloud-err-text').slice(0, 70)}`);
+      $$('reload-btn').click();
+      await waitFor(() => g.screen() === 'select');
+      row(g.screen() === 'select' && text('who') === '토끼' && $$('cloud-err').hidden, '"다시 불러오기"를 누르면 이어서 열려요', `${g.screen()} · ${text('who')}`);
+    });
+    await withGame('Firebase 연결 실패', 800, '?fake=initfail', async (g) => {
+      const { $$, text } = g;
+      await waitFor(() => !$$('cloud-err').hidden);
+      row(g.screen() === 'login' && $$('login-btn-big').disabled && $$('login-btn').disabled && text('cloud-err-text').includes('Firebase 에 연결하지 못했어요') && text('cloud-err-text').includes('새로고침') && text('login-status').includes('로그인할 수 없어요'),
+        'Firebase 를 불러오지 못하면 이유를 보여 주고 로그인 단추를 막아요', text('cloud-err-text').slice(0, 110));
+    });
+
+    // 10. 주인별 랭킹: 로그인한 모든 사람
+    await withGame('주인별 랭킹', 800, '?fake=1', async (g) => {
+      const { $$, text } = g;
+      putRecord(g, 'u1', '토끼', { '1': stageOf(5, 1100, 3), '2': stageOf(4, 900, 2) });
+      putRecord(g, 'u2', '고양이', { '1': stageOf(5, 900, 3), '2': stageOf(7, 1200, 3), '3': stageOf(9, 1500, 3) });
+      putRecord(g, 'u3', '강아지', { '1': stageOf(5, 1100, 3), '2': stageOf(4, 900, 2) });
+      putRecord(g, 'u4', '토끼', { '1': stageOf(2, 2000, 1) });
+      await signIn(g, 'u1');
+      $$('ranking-btn').click();
+      await waitFor(() => g.doc.querySelectorAll('#ranking-table tr').length > 1);
+      const rows = [...g.doc.querySelectorAll('#ranking-table tr')].map(tr => tr.innerText.replace(/\s+/g, ' '));
+      row(g.screen() === 'ranking' && rows.length === 5 && rows[1].includes('1위') && rows[1].includes('고양이') && rows[2].includes('2위') && rows[3].includes('2위') && rows[4].includes('4위') && rows[4].includes('토끼 #u4'),
+        '랭킹에 로그인한 모든 사람이 순서대로 나와요 (같은 별명은 구분)', rows.slice(1).join(' / '));
+      row(rows.some(r => r.includes('토끼 (지금)')) && g.doc.querySelector('#ranking-table tr.me') !== null, '나는 "(지금)"으로 표시돼요', rows.find(r => r.includes('(지금)')));
+      const stageText = text('ranking-stages');
+      row(stageText.includes('1위 고양이 9.00초') && stageText.includes('스테이지 3 · 구름 다리 1위 고양이 15.00초'), '스테이지별로 가장 빠른 사람이 1위예요', stageText.slice(0, 110));
+      row(text('ranking-note').includes('로그인한 모든 사람'), '랭킹이 누구의 랭킹인지 알려 줘요', text('ranking-note').slice(0, 60));
+      $$('ranking-back').click();
+      g.fake.failNext('list', 'permission-denied');
+      $$('ranking-btn').click();
+      await waitFor(() => text('cloud-err-text').includes('랭킹을 불러오지 못했어요'));
+      row(text('cloud-err-text').includes('랭킹을 불러오지 못했어요') && text('cloud-err-text').includes('권한') && text('ranking-note').includes('불러오지 못했어요'), '랭킹을 못 불러오면 이유를 보여 줘요', text('cloud-err-text').slice(0, 90));
+    });
+  }
+
+
+  if (html !== null) {
+    // 11. 최고기록(NEW!)과 별을 게임 화면에서 (깬 것처럼 만들어 봄)
+    await withGame('최고기록과 별', 800, '?fake=1', async (g) => {
+      const { $$, text, win } = g;
+      putRecord(g, 'u1', '토끼');
+      await signIn(g, 'u1');
       row(win.formatTime(1234) === '12.34' && win.formatTime(500) === '5.00' && win.formatTime(6005) === '60.05', '시간 글 모양', '1234 → 12.34 · 500 → 5.00 · 6005 → 60.05');
       const clearOnce = (frames) => win.eval(`save = loadSave(); startStage(STAGES[0]); run.t = ${frames}; finish(); document.getElementById('clear').innerText`);
-      const a = clearOnce(740);      // 12.33초 (740/60)
+      const a = clearOnce(740);
       row(a.includes('NEW!') && a.includes('첫 기록') && a.includes('12.33'), '처음 깬 화면에 NEW!', a.replace(/\s+/g, ' '));
-      const b = clearOnce(900);      // 15.00초 — 더 느림
+      const b = clearOnce(900);
       row(!b.includes('NEW!') && b.includes('15.00') && b.includes('12.33'), '더 느리면 NEW! 가 안 떠요', b.replace(/\s+/g, ' '));
-      const c = clearOnce(600);      // 10.00초 — 더 빠름
+      const c = clearOnce(600);
       row(c.includes('NEW!') && c.includes('이전 12.33') && c.includes('10.00'), '더 빠르면 NEW! 와 이전 기록', c.replace(/\s+/g, ' '));
       win.eval('showSelect()');
-      const card = f.contentDocument.querySelector('#cards .card').innerText;
+      const card = g.doc.querySelector('#cards .card').innerText;
       row(card.includes('최고 10.00초'), '스테이지 고르는 화면에 최고기록', card.replace(/\s+/g, ' '));
-      // 별: 코인을 다 모은 판으로 깬 것처럼 만들어 본다 (스테이지 1, 코인 5개, 목표 12초)
       const clearFull = (frames, all) => win.eval(`save = loadSave(); startStage(STAGES[0]); run.t = ${frames}; run.got.fill(${all}); finish(); document.getElementById('clear').innerText`);
-      const star3 = clearFull(600, true);      // 600프레임 = 10초 + 코인 다 → 별 3
+      const star3 = clearFull(600, true);
       row(star3.includes('★★★') && star3.includes('✅ 코인 다 모으기 (5/5)') && star3.includes('✅ 12초 안에 깨기 (10.00초)'), '별 3개 화면', star3.replace(/\s+/g, ' '));
-      const star2 = clearFull(900, true);      // 900프레임 = 15초 + 코인 다 → 별 2
+      const star2 = clearFull(900, true);
       row(star2.includes('★★☆') && star2.includes('✅ 코인 다 모으기') && star2.includes('⬜ 12초 안에 깨기 (15.00초)') && star2.includes('별 최고기록은 ★★★'), '별 2개 화면 (못 받은 칸은 ⬜)', star2.replace(/\s+/g, ' '));
-      const star1 = clearFull(1200, false);    // 1200프레임 = 20초 + 코인 없음 → 별 1
+      const star1 = clearFull(1200, false);
       row(star1.includes('★☆☆') && star1.includes('⬜ 코인 다 모으기 (0/5)') && star1.includes('⬜ 12초 안에 깨기'), '별 1개 화면', star1.replace(/\s+/g, ' '));
       win.eval('showSelect()');
-      const starCard = f.contentDocument.querySelector('#cards .card').innerText.replace(/\s+/g, ' ');
+      const starCard = g.doc.querySelector('#cards .card').innerText.replace(/\s+/g, ' ');
       row(starCard.includes('별 ★★★'), '스테이지 카드에 최고 별', starCard);
-      const storedStars = JSON.parse(ls.getItem(SAVE_KEY)).stages['1'].stars;
-      row(storedStars === 3, '브라우저에 저장된 별', `stages.1.stars = ${storedStars}`);
       const hudText = win.eval(`startStage(STAGES[1]); updateHud(); document.getElementById('hud').innerText`);
       row(hudText.includes('목표 15초'), '플레이 중 목표 시간 표시', hudText);
       win.eval('showSelect()');
-      const cardTexts = [...f.contentDocument.querySelectorAll('#cards .card')].map(c => c.innerText.replace(/\s+/g, ' '));
-      row(cardTexts.length === 3 && cardTexts.every((t, i) => t.includes('난이도 ' + ['쉬움', '보통', '어려움'][i]) && !t.includes('난이도 ★') && t.includes(STAGES[i].hint)),
-        '스테이지 카드에 난이도(글자)와 설명', cardTexts.map(t => t.slice(0, 40)).join(' / '));
-      const stored = JSON.parse(ls.getItem(SAVE_KEY));
-      row(stored.stages['1'].time === 1000, '브라우저에 저장된 시간', `stages.1.time = ${stored.stages['1'].time} (1/100초)`);
-    } catch (e) {
-      skip('게임 화면에서 최고기록', '게임 화면을 이 페이지 안에서 열 수 없었어요: ' + e.message);
-    } finally {
-      try { if (ls) { saved === null ? ls.removeItem(SAVE_KEY) : ls.setItem(SAVE_KEY, saved); } } catch (e) {}
-      if (f) f.remove();
-    }
-  }
+      const cardTexts = [...g.doc.querySelectorAll('#cards .card')].map(c => c.innerText.replace(/\s+/g, ' '));
+      row(cardTexts.length === 3 && cardTexts.every((t, i) => t.includes('난이도 ' + ['쉬움', '보통', '어려움'][i]) && !t.includes('난이도 ★') && t.includes(STAGES[i].hint)), '스테이지 카드에 난이도(글자)와 설명', cardTexts.map(t => t.slice(0, 40)).join(' / '));
+      await flush(g);
+      const st1 = g.fake.records.u1.stages['1'];
+      row(st1.time === 1000 && st1.stars === 3 && st1.coins === 5, '서버에 저장된 시간·별·코인', `stages.1 = ${JSON.stringify(st1)}`);
+    });
 
-  // 7. 게임 화면에서 기록 내보내기·불러오기 (진짜 단추를 눌러 봄. 파일 내려받기는 가로채서 내용만 읽음. 진짜 기록은 빌려 쓰고 돌려놓음)
-  if (html !== null) {
-    let f = null, ls = null, saved = null;
-    try {
-      f = await loadFrame('../index.html', 800);
-      const win = f.contentWindow, doc = f.contentDocument;
-      ls = win.localStorage;
-      saved = ls.getItem(SAVE_KEY);
-      ls.removeItem(SAVE_KEY);
-      const $$ = (id) => doc.getElementById(id);
-      const text = (id) => $$(id).innerText.replace(/\s+/g, ' ');
-      const waitFor = async (fn, ms = 3000) => {
-        const end = Date.now() + ms;
-        while (Date.now() < end) { if (fn()) return true; await new Promise(r => setTimeout(r, 50)); }
-        return !!fn();
-      };
+    // 12. 기록 내보내기·불러오기 (진짜 단추를 눌러 봄. 파일 내려받기는 가로채서 내용만 읽음)
+    await withGame('기록 내보내기·불러오기', 800, '?fake=1', async (g) => {
+      const { $$, text, win, doc } = g;
       const sendFile = (content) => {
         const dt = new win.DataTransfer();
         dt.items.add(new win.File([content], 'record.json', { type: 'application/json' }));
         $$('import-file').files = dt.files;
         $$('import-file').dispatchEvent(new win.Event('change'));
       };
-      const stored = () => JSON.parse(ls.getItem(SAVE_KEY));
-
-      // 이름 정하는 첫 화면에서도 불러오기가 보여요
-      win.eval("save = loadSave(); show('name');");
-      row(!!doc.querySelector('#name-screen .io-import') && !$$('name-screen').hidden, '첫 화면(이름 정하기)에 기록 불러오기 단추', '다른 기기에서 쓰던 기록을 이름 정하기 전에 불러올 수 있어요.');
-
-      // 기록이 없을 때 내보내기
-      win.eval("showSelect();");
+      const other = makeExportText({ v: 1, owner: '고양이', stages: { '1': stageOf(5, 900, 3), '2': stageOf(7, 1200, 3), '3': stageOf(9, 1500, 3) } });
+      await signIn(g, 'u1');   // 서버에 기록이 없어서 별명 정하는 화면
+      row(g.screen() === 'name' && !!doc.querySelector('#name-screen .io-import'), '첫 화면(이름 정하기)에 기록 불러오기 단추', '다른 곳에서 내려받은 기록 파일을 이름 정하기 전에 불러올 수 있어요.');
       $$('export-btn').click();
       row(!$$('io-msg').hidden && text('io-msg').includes('내보낼 기록이 없어요'), '기록이 없으면 내보내기를 안내해요', text('io-msg'));
+      sendFile(other);
+      await waitFor(() => !$$('import-panel').hidden);
+      const fresh1 = text('import-panel');
+      $$('import-yes').click();
+      await flush(g);
+      row(fresh1.includes('지금 기록: 없음') && g.screen() === 'select' && g.fake.records.u1 && g.fake.records.u1.nickname === '고양이' && g.fake.records.u1.uid === 'u1' && Object.keys(g.fake.records.u1.stages).length === 3,
+        '새 계정에서 이름 정하기 전에 불러오면 바로 이어 해요 (내 계정에 저장)', fresh1.slice(0, 120));
 
-      // 내보내기: 다운로드를 가로채서 파일 내용을 읽는다
-      win.eval("save = setOwner('토끼'); recordClear(1, 5, 1100, 3); recordClear(2, 3, 1500, 2); save = loadSave(); showSelect();");
       let blob = null, fileName = null;
       win.URL.createObjectURL = (b) => { blob = b; return 'blob:check'; };
       win.HTMLAnchorElement.prototype.click = function () { fileName = this.download; };
       $$('export-btn').click();
       const exported = blob ? parseImport(await blob.text(), STAGES) : { ok: false, error: '파일이 만들어지지 않았어요' };
-      row(exported.ok && exported.save.owner === '토끼' && exported.save.stages['1'].stars === 3 && exported.save.stages['2'].coins === 3 && /^platformer-record-\d{8}\.json$/.test(fileName),
-        '기록 내보내기 단추가 파일을 만들어요', exported.ok ? `${fileName} · 토끼 · 스테이지 ${Object.keys(exported.save.stages).length}개` : exported.error);
+      row(exported.ok && exported.save.owner === '고양이' && exported.save.stages['3'].coins === 9 && /^platformer-record-\d{8}\.json$/.test(fileName), '기록 내보내기 단추가 파일을 만들어요', exported.ok ? `${fileName} · ${exported.save.owner} · 스테이지 ${Object.keys(exported.save.stages).length}개` : exported.error);
+      row(!/uid|u1/.test(blob ? await blob.text() : '') , '내보낸 파일에는 uid 가 들어가지 않아요', '별명과 기록만 들어 있어요.');
       row(!$$('io-msg').hidden && text('io-msg').includes('저장했어요'), '내보낸 뒤 안내 글', text('io-msg'));
 
-      // 불러오기: 다른 기록이 든 파일
-      const other = makeExportText({ v: 1, owner: '고양이', stages: {
-        '1': { cleared: true, coins: 5, time: 900, stars: 3 }, '2': { cleared: true, coins: 7, time: 1200, stars: 3 }, '3': { cleared: true, coins: 9, time: 1500, stars: 3 } } });
-      sendFile(other);
-      const shown = await waitFor(() => !$$('import-panel').hidden);
-      const panel = shown ? text('import-panel') : '';
-      row(shown && panel.includes('토끼') && panel.includes('고양이') && panel.includes('바꾸면 지금 기록은 사라져요'), '불러오기 전에 지금 기록과 파일의 기록을 보여 줘요', panel);
-      row(stored().owner === '토끼', '확인하기 전에는 기록이 바뀌지 않아요', `저장된 이름: ${stored().owner}`);
+      const another = makeExportText({ v: 1, owner: '다람쥐', stages: { '1': stageOf(3, 1300, 2) } });
+      sendFile(another);
+      await waitFor(() => !$$('import-panel').hidden);
+      const panel = text('import-panel');
+      row(panel.includes('고양이') && panel.includes('다람쥐') && panel.includes('바꾸면 지금 기록은 사라져요'), '불러오기 전에 지금 기록과 파일의 기록을 보여 줘요', panel);
+      row(g.fake.records.u1.nickname === '고양이', '확인하기 전에는 서버의 기록이 바뀌지 않아요', `서버 별명: ${g.fake.records.u1.nickname}`);
       $$('import-no').click();
-      row($$('import-panel').hidden && stored().owner === '토끼' && stored().stages['3'] === undefined, '취소하면 기록이 그대로예요', text('io-msg'));
-
-      sendFile(other);
+      row($$('import-panel').hidden && g.fake.records.u1.nickname === '고양이' && Object.keys(g.fake.records.u1.stages).length === 3, '취소하면 기록이 그대로예요', text('io-msg'));
+      sendFile(another);
       await waitFor(() => !$$('import-panel').hidden);
       $$('import-yes').click();
-      const after = stored();
-      row(after.owner === '고양이' && after.stages['3'].coins === 9 && after.stages['1'].time === 900, '바꾸기를 누르면 파일의 기록이 저장돼요', `이름 ${after.owner} · 스테이지 ${Object.keys(after.stages).length}개`);
-      row(!$$('select-screen').hidden && $$('who').textContent === '고양이' && $$('total').textContent.includes('21') && text('io-msg').includes('불러왔어요'), '불러온 뒤 화면이 바뀌어요', `${$$('who').textContent} · ${$$('total').textContent} · ${text('io-msg')}`);
-
-      // 잘못된 파일 → 이유를 보여 주고 기록은 그대로
+      await flush(g);
+      const after = g.fake.records.u1;
+      row(after.nickname === '다람쥐' && after.uid === 'u1' && Object.keys(after.stages).length === 1 && after.stages['1'].time === 1300 && $$('who').textContent === '다람쥐' && text('io-msg').includes('불러왔어요'), '바꾸기를 누르면 파일의 기록이 내 계정에 저장돼요', `서버: ${after.nickname} · 스테이지 ${Object.keys(after.stages)} · uid ${after.uid}`);
       for (const [label, content, word] of [['글자 파일', '이건 기록이 아니에요', '기록 파일이 아니에요'], ['더 새로운 버전 파일', JSON.stringify({ app: 'platformer-save', v: 2, owner: 'a', stages: {} }), '더 새로운 버전']]) {
         $$('io-msg').textContent = '';
         sendFile(content);
         await waitFor(() => text('io-msg').includes(word));
-        row(text('io-msg').includes(word) && $$('import-panel').hidden && stored().owner === '고양이' && $$('io-msg').className.includes('bad'), `${label}을 거절하고 기록은 그대로`, text('io-msg'));
+        row(text('io-msg').includes(word) && $$('import-panel').hidden && g.fake.records.u1.nickname === '다람쥐' && $$('io-msg').className.includes('bad'), `${label}을 거절하고 기록은 그대로`, text('io-msg'));
       }
+    });
 
-      // 새 기기: 기록이 아무것도 없을 때 첫 화면에서 불러오기
-      ls.removeItem(SAVE_KEY);
-      win.eval("save = loadSave(); show('name');");
-      sendFile(other);
-      await waitFor(() => !$$('import-panel').hidden);
-      const fresh = text('import-panel');
-      $$('import-yes').click();
-      row(fresh.includes('지금 기록: 없음') && stored().owner === '고양이' && !$$('select-screen').hidden, '새 기기에서 이름 정하기 전에 불러오면 바로 이어 해요', fresh);
-    } catch (e) {
-      skip('게임 화면에서 기록 내보내기·불러오기', '게임 화면을 이 페이지 안에서 열 수 없었어요: ' + e.message);
-    } finally {
-      try { if (ls) { saved === null ? ls.removeItem(SAVE_KEY) : ls.setItem(SAVE_KEY, saved); } } catch (e) {}
-      if (f) f.remove();
-    }
-  }
-
-  // 8. 게임 화면에서 주인별 랭킹·새 주인 (진짜 단추를 눌러 봄. 진짜 기록과 보관된 주인은 빌려 쓰고 돌려놓음)
-  if (html !== null) {
-    let f = null, ls = null, savedA = null, savedB = null;
-    try {
-      f = await loadFrame('../index.html', 800);
-      const win = f.contentWindow, doc = f.contentDocument;
-      ls = win.localStorage;
-      savedA = ls.getItem(SAVE_KEY); savedB = ls.getItem(OWNERS_KEY);
-      ls.removeItem(SAVE_KEY); ls.removeItem(OWNERS_KEY);
-      const $$ = (id) => doc.getElementById(id);
-      const text = (id) => $$(id).innerText.replace(/\s+/g, ' ');
-      const stored = () => JSON.parse(ls.getItem(SAVE_KEY));
-      const owners = () => JSON.parse(ls.getItem(OWNERS_KEY) || '{"owners":{}}').owners;
-      const submitName = (name) => { $$('name-input').value = name; $$('name-form').dispatchEvent(new win.Event('submit', { cancelable: true })); };
-      const waitFor = async (fn, ms = 3000) => { const end = Date.now() + ms; while (Date.now() < end) { if (fn()) return true; await new Promise(r => setTimeout(r, 50)); } return !!fn(); };
-
-      win.eval("save = setOwner('토끼'); recordClear(1, 5, 1100, 3); recordClear(2, 4, 900, 2); save = loadSave(); showSelect();");
-      row(!!$$('ranking-btn') && !!$$('newowner-btn'), '주인별 랭킹·새 주인 단추', '스테이지 고르는 화면에 있어요.');
-
-      // 주인이 한 명일 때
-      $$('ranking-btn').click();
-      row(!$$('ranking-screen').hidden && text('ranking-table').includes('토끼 (지금)') && text('ranking-note').includes('주인이 한 명뿐이에요'), '주인이 한 명일 때 랭킹 화면', text('ranking-table') + ' · ' + text('ranking-note').slice(0, 60));
-      $$('ranking-back').click();
-      row(!$$('select-screen').hidden && $$('ranking-screen').hidden, '랭킹 화면에서 돌아와요', '스테이지 고르는 화면');
-
-      // 새 주인 → 취소
-      $$('newowner-btn').click();
-      row(!$$('name-screen').hidden && stored().owner === '' && !!owners()['토끼'] && !$$('newowner-cancel').hidden && text('owners-note').includes('토끼'), '새 주인으로 시작하면 지금 주인이 보관돼요', `보관: ${Object.keys(owners())} · ${text('owners-note')}`);
-      $$('newowner-cancel').click();
-      row(!$$('select-screen').hidden && $$('who').textContent === '토끼' && stored().owner === '토끼' && stored().stages['2'].coins === 4 && Object.keys(owners()).length === 0, '취소하면 원래 주인의 기록 그대로 돌아와요', `${$$('who').textContent} · 스테이지 ${Object.keys(stored().stages).length}개 · ${text('io-msg')}`);
-
-      // 새 주인 '고양이' → 스테이지 1 깨기 → 랭킹
-      $$('newowner-btn').click();
-      submitName('고양이');
-      row(!$$('select-screen').hidden && $$('who').textContent === '고양이' && stored().owner === '고양이' && Object.keys(stored().stages).length === 0 && !!owners()['토끼'], '새 이름을 정하면 빈 기록으로 시작해요 (토끼는 보관 중)', `${$$('who').textContent} · 보관: ${Object.keys(owners())}`);
-      win.eval("save = loadSave(); startStage(STAGES[0]); run.t = 540; run.got.fill(true); finish(); showSelect();");   // 540프레임 = 9초, 코인 다 → 별 3
-      $$('ranking-btn').click();
-      const rows = [...doc.querySelectorAll('#ranking-table tr')].map(tr => tr.innerText.replace(/\s+/g, ' '));
-      row(rows.length === 3 && rows[1].includes('1위') && rows[1].includes('토끼') && rows[2].includes('2위') && rows[2].includes('고양이 (지금)'), '랭킹: 토끼(별 5)가 1위, 고양이(별 3)가 2위', rows.slice(1).join(' / '));
-      const stageText = text('ranking-stages');
-      row(stageText.includes('1위 고양이 (지금) 9.00초') && stageText.includes('2위 토끼 11.00초') && stageText.includes('아직 기록이 없어요'), '스테이지별 랭킹: 더 빠른 고양이가 1위', stageText.slice(0, 120));
-
-      // 토끼로 돌아가기: 같은 이름 쓰기
-      $$('ranking-back').click();
-      $$('newowner-btn').click();
-      submitName('토끼');
-      row(!$$('select-screen').hidden && $$('who').textContent === '토끼' && stored().stages['2'].coins === 4 && !!owners()['고양이'] && !owners()['토끼'] && text('io-msg').includes('이어 해요'), '보관된 이름을 쓰면 그 주인으로 이어 해요', `${$$('who').textContent} · 스테이지 ${Object.keys(stored().stages).length}개 · 보관: ${Object.keys(owners())}`);
-
-      // 안전: 새 주인 뒤 기록을 불러오면 "원래 주인으로 돌아가기"가 남아 있으면 안 돼요
-      $$('newowner-btn').click();
-      const dt = new win.DataTransfer();
-      dt.items.add(new win.File([makeExportText({ v: 1, owner: '다람쥐', stages: { '1': { cleared: true, coins: 3, time: 1300, stars: 2 } } })], 'r.json', { type: 'application/json' }));
-      $$('import-file').files = dt.files;
-      $$('import-file').dispatchEvent(new win.Event('change'));
-      await waitFor(() => !$$('import-panel').hidden);
-      $$('import-yes').click();
-      $$('rename').click();
-      row(stored().owner === '다람쥐' && $$('newowner-cancel').hidden && !!owners()['토끼'], '새 주인 뒤 불러오면 되돌리기 단추가 남지 않아요', `${stored().owner} · 되돌리기 단추 ${$$('newowner-cancel').hidden ? '숨김' : '보임'} · 보관: ${Object.keys(owners())}`);
-      $$('name-input').value = ''; // 이름 바꾸기 화면 그대로 둠
-    } catch (e) {
-      skip('게임 화면에서 주인별 랭킹', '게임 화면을 이 페이지 안에서 열 수 없었어요: ' + e.message);
-    } finally {
-      try { if (ls) {
-        savedA === null ? ls.removeItem(SAVE_KEY) : ls.setItem(SAVE_KEY, savedA);
-        savedB === null ? ls.removeItem(OWNERS_KEY) : ls.setItem(OWNERS_KEY, savedB);
-      } } catch (e) {}
-      if (f) f.remove();
-    }
-
-    // 폰 폭에서 랭킹 화면이 잘리지 않는지 (주인 5명)
-    let g = null, ls2 = null, sA = null, sB = null;
-    try {
-      g = await loadFrame('../index.html', 360);
-      const w = g.contentWindow, d = g.contentDocument;
-      ls2 = w.localStorage; sA = ls2.getItem(SAVE_KEY); sB = ls2.getItem(OWNERS_KEY);
-      ls2.removeItem(SAVE_KEY); ls2.removeItem(OWNERS_KEY);
-      w.eval(`save = setOwner('열두글자이름이에요요요'); recordClear(1, 5, 1100, 3);
-        for (const n of ['고양이', '강아지', '다람쥐', '아주긴이름입니다만']) { startNewOwner(); setOwner(n); recordClear(1, 5, 1000, 3); recordClear(2, 7, 1200, 3); }
-        save = loadSave(); showRanking();`);
-      const nRows = d.querySelectorAll('#ranking-table tr').length;
-      row(nRows === 6 && d.documentElement.scrollWidth <= 360, '폰 폭(360)에서 랭킹 화면이 안 잘려요', `주인 ${nRows - 1}명 · 내용 폭 ${d.documentElement.scrollWidth}`);
-    } catch (e) {
-      skip('폰 폭 랭킹 화면', '게임 화면을 이 페이지 안에서 열 수 없었어요: ' + e.message);
-    } finally {
-      try { if (ls2) {
-        sA === null ? ls2.removeItem(SAVE_KEY) : ls2.setItem(SAVE_KEY, sA);
-        sB === null ? ls2.removeItem(OWNERS_KEY) : ls2.setItem(OWNERS_KEY, sB);
-      } } catch (e) {}
-      if (g) g.remove();
-    }
-  }
-
-  // 9. 디자인 (하늘색 중심 · 진행시간이 가장 크게 · 폰에서 글자 읽기). 게임 화면을 실제로 열어 글자 크기와 색 대비를 잼.
-  if (html !== null) {
+    // 13. 디자인 (하늘색 중심 · 진행시간이 가장 크게 · 폰에서 글자 읽기). 게임 화면을 실제로 열어 글자 크기와 색 대비를 잼.
     const parseColor = (c) => { const m = c.match(/rgba?\(([^)]+)\)/); if (!m) return null; const p = m[1].split(',').map(parseFloat); return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 }; };
     const lum = ({ r, g, b }) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
     const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
@@ -632,19 +810,13 @@ async function run() {
       }
       return out;
     };
-    const widths = [[360, '폰 360'], [1280, '컴퓨터 1280']];
-    for (const [width, name] of widths) {
-      let f = null, ls = null, sA = null, sB = null;
-      try {
-        f = await loadFrame('../index.html', width);
-        const win = f.contentWindow, doc = f.contentDocument;
-        ls = win.localStorage; sA = ls.getItem(SAVE_KEY); sB = ls.getItem(OWNERS_KEY);
-        ls.removeItem(SAVE_KEY); ls.removeItem(OWNERS_KEY);
+    for (const [width, name] of [[360, '폰 360'], [1280, '컴퓨터 1280']]) {
+      await withGame(`디자인 확인 (${name})`, width, '?fake=1', async (g) => {
+        const { $$, win, doc } = g;
         const states = {};
-        const snap = (key, code) => { win.eval(code); states[key] = { items: audit(win, doc.body), overflow: doc.documentElement.scrollWidth }; };
-        const good = "save = setOwner('토끼'); recordClear(1, 5, 1000, 3); recordClear(2, 4, 1500, 2); save = loadSave();";
+        const snap = async (key, code, waitFn) => { if (code) win.eval(code); if (waitFn) await waitFor(waitFn); states[key] = { items: audit(win, doc.body), overflow: doc.documentElement.scrollWidth }; };
 
-        snap('이름 정하기', "save = loadSave(); show('name');");
+        await snap('로그인 화면');
         if (width === 1280) {
           const hdr = parseColor(win.getComputedStyle(doc.querySelector('header')).backgroundColor);
           const btn = parseColor(win.getComputedStyle(doc.querySelector('.big')).backgroundColor);
@@ -652,24 +824,35 @@ async function run() {
           const hs = [hdr, btn, body].map(hue);
           row(hs.every(x => x.h >= 190 && x.h <= 215 && x.s >= 0.45), '중심 색은 하늘색', `위쪽 바 ${Math.round(hs[0].h)}° · 단추 ${Math.round(hs[1].h)}° · 바탕 ${Math.round(hs[2].h)}° (하늘색은 약 190~215°)`);
         }
-        snap('스테이지 고르기', good + " showSelect(); document.getElementById('more').open = true;");
-        snap('안내 글(성공)', "ioMsg('기록을 불러왔어요.', false);");
-        snap('안내 글(실패)', "ioMsg('이 게임에서 내보낸 기록 파일이 아니에요. 지금 기록은 그대로예요.', true);");
-        snap('주인별 랭킹', "startNewOwner(); setOwner('고양이'); recordClear(1, 5, 900, 3); save = loadSave(); showRanking();");
-        snap('불러오기 확인 창', "showSelect(); handleImportText(makeExportText({ v: 1, owner: '다람쥐', stages: { '1': { cleared: true, coins: 3, time: 1300, stars: 2 } } }));");
+        await snap('로그인 오류', "showCloudError('로그인에 실패했어요. 로그인 창(팝업)이 막혔어요. 주소창 옆의 팝업 허용을 누른 뒤 다시 눌러 주세요. (오류 코드: auth/popup-blocked)', false);");
+        win.eval('clearCloudError();');
+        win.localStorage.setItem(LEGACY_KEY, JSON.stringify({ v: 1, owner: '예전이', stages: { '1': stageOf(5, 1000, 3) } }));
+        putRecord(g, 'u3', '고양이', { '1': stageOf(5, 900, 3), '2': stageOf(7, 1200, 3) });
+        putRecord(g, 'u4', '강아지', { '1': stageOf(5, 1100, 3) });
+        await signIn(g, 'u2');
+        await snap('이름 정하기(가져오기 칸)');
+        await submitName(g, '새별');
+        await flush(g);
+        await snap('스테이지 고르기', "document.getElementById('more').open = true;");
+        await snap('안내 글(성공)', "ioMsg('기록을 불러왔어요. 내 계정에 저장하고 있어요.', false);");
+        await snap('안내 글(실패)', "ioMsg('이 게임에서 내보낸 기록 파일이 아니에요. 지금 기록은 그대로예요.', true);");
+        await snap('저장 실패 줄', "showCloudError('기록을 저장하지 못했어요. 권한이 없어요. 콘솔의 Firestore 규칙에 firestore.rules 를 붙여 넣었는지, 로그인이 풀리지 않았는지 확인해 주세요. (오류 코드: permission-denied)', true); document.getElementById('cloud-status').hidden = false; document.getElementById('cloud-status').textContent = '☁ 저장하지 못했어요'; document.getElementById('cloud-status').dataset.state = 'error';");
+        win.eval("clearCloudError();");
+        await snap('주인별 랭킹', "showRanking();", () => doc.querySelectorAll('#ranking-table tr').length > 3);
+        await snap('불러오기 확인 창', "showSelect(); handleImportText(makeExportText({ v: 1, owner: '다람쥐', stages: { '1': { cleared: true, coins: 3, time: 1300, stars: 2 } } }));");
         win.eval("$('import-panel').hidden = true; $('io-msg').hidden = true;");
 
         // 플레이 중: 진행시간이 가장 커야 한다
-        snap('플레이 중', good + " startStage(STAGES[1]); run.t = 372; updateHud();");
+        await snap('플레이 중', "startStage(STAGES[1]); run.t = 372; updateHud();");
         const play = states['플레이 중'].items;
         const timeEl = play.find(x => x.name === 'span#hud-time');
         const others = play.filter(x => x.name !== 'span#hud-time').sort((a, b) => b.size - a.size);
         row(!!timeEl && timeEl.size >= others[0].size * 1.3 && timeEl.size >= (width < 700 ? 40 : 56),
           `진행시간이 가장 크게 보여요 (${name})`, timeEl ? `진행시간 ${timeEl.size}px · 그다음으로 큰 글자 ${others[0].size}px (${others[0].name})` : '진행시간을 찾지 못했어요');
 
-        // 클리어 화면: 처음 깨는 경우(글이 가장 많은 경우)로 시험
-        snap('클리어 화면', "localStorage.removeItem(SAVE_KEY); save = setOwner('새싹'); startStage(STAGES[0]); run.t = 900; run.got.fill(true); finish();");
-        const clearBox = doc.getElementById('clear');
+        // 클리어 화면: 처음 깨는 경우(글이 가장 많은 경우)로 시험 — 스테이지 2 는 아직 안 깼고 다음 스테이지가 있다
+        await snap('클리어 화면', "startStage(STAGES[1]); run.t = 900; run.got.fill(true); finish();");
+        const clearBox = $$('clear');
         const clearItems = audit(win, clearBox);
         const big = clearItems.find(x => x.name === 'span.t-big');
         const restMax = clearItems.filter(x => x.name !== 'span.t-big').sort((a, b) => b.size - a.size)[0];
@@ -677,7 +860,7 @@ async function run() {
         row(clearBox.scrollHeight <= clearBox.clientHeight + 1, `클리어 화면이 스크롤 없이 한 화면에 들어와요 (${name})`, `내용 ${clearBox.scrollHeight}px · 칸 ${clearBox.clientHeight}px`);
         const btns = [...clearBox.querySelectorAll('button')].map(b => b.getBoundingClientRect());
         const box = clearBox.getBoundingClientRect();
-        row(btns.length >= 2 && btns.every(r => r.top >= box.top && r.bottom <= box.bottom + 1 && r.left >= box.left && r.right <= box.right + 1), `클리어 화면 단추가 모두 보여요 (${name})`, `단추 ${btns.length}개`);
+        row(btns.length >= 3 && btns.every(r => r.top >= box.top && r.bottom <= box.bottom + 1 && r.left >= box.left && r.right <= box.right + 1), `클리어 화면 단추가 모두 보여요 (${name})`, `단추 ${btns.length}개`);
 
         // 글자 크기와 대비 (모든 화면)
         const all = Object.entries(states).flatMap(([st, v]) => v.items.map(x => ({ ...x, st })));
@@ -685,35 +868,20 @@ async function run() {
         const lowContrast = all.filter(x => x.ratio < x.need);
         const smallest = all.reduce((m, x) => (x.size < m.size ? x : m), all[0]);
         row(tooSmall.length === 0, `글자가 너무 작지 않아요 (${name})`, tooSmall.length ? '13px보다 작은 글자: ' + tooSmall.slice(0, 4).map(x => `${x.st} ${x.name} ${x.size}px`).join(', ') : `가장 작은 글자 ${smallest.size}px (${smallest.st} · ${smallest.name}) · 확인한 글자 ${all.length}개 · 화면 ${Object.keys(states).length}종`);
-        row(lowContrast.length === 0, `글자와 바탕의 색 대비가 충분해요 (${name})`, lowContrast.length ? '대비가 모자란 글자: ' + lowContrast.slice(0, 4).map(x => `${x.st} ${x.name} ${x.ratio.toFixed(1)}:1`).join(', ') : `모든 글자 4.5:1 이상 (큰 글자 3:1)`);
+        row(lowContrast.length === 0, `글자와 바탕의 색 대비가 충분해요 (${name})`, lowContrast.length ? '대비가 모자란 글자: ' + lowContrast.slice(0, 4).map(x => `${x.st} ${x.name} ${x.ratio.toFixed(1)}:1`).join(', ') : '모든 글자 4.5:1 이상 (큰 글자 3:1)');
         const wide = Object.entries(states).filter(([, v]) => v.overflow > width);
         row(wide.length === 0, `화면이 옆으로 잘리지 않아요 (${name})`, wide.length ? wide.map(([k, v]) => `${k} ${v.overflow}px`).join(', ') : `모든 화면의 내용 폭이 ${width}px 이하`);
-      } catch (e) {
-        skip(`디자인 확인 (${name})`, '게임 화면을 이 페이지 안에서 열 수 없었어요: ' + e.message);
-      } finally {
-        try { if (ls) {
-          sA === null ? ls.removeItem(SAVE_KEY) : ls.setItem(SAVE_KEY, sA);
-          sB === null ? ls.removeItem(OWNERS_KEY) : ls.setItem(OWNERS_KEY, sB);
-        } } catch (e) {}
-        if (f) f.remove();
-      }
+        const slotRect = $$('login-slot').getBoundingClientRect();
+        row(slotRect.left >= 0 && slotRect.right <= width, `로그인·로그아웃 단추 자리가 화면 안에 있어요 (${name})`, `자리 ${Math.round(slotRect.left)}~${Math.round(slotRect.right)}px / 화면 ${width}px`);
+      });
     }
-  }
 
-  // 10. 처음 온 사람을 위한 안내 (진단 표 1~5번을 고친 것). 폰과 컴퓨터 폭에서 처음 방문한 사람처럼 따라가 봄.
-  if (html !== null) {
+    // 14. 처음 온 사람을 위한 안내 (진단 표 1~5번). 폰과 컴퓨터 폭에서 처음 방문한 사람처럼 따라가 봄.
     for (const [width, label] of [[360, '폰 360'], [1280, '컴퓨터 1280']]) {
-      let f = null, ls = null, sA = null, sB = null;
-      try {
-        f = await loadFrame('../index.html', width);
-        const win = f.contentWindow, doc = f.contentDocument;
-        ls = win.localStorage; sA = ls.getItem(SAVE_KEY); sB = ls.getItem(OWNERS_KEY);
-        ls.removeItem(SAVE_KEY); ls.removeItem(OWNERS_KEY);
-        const $$ = (id) => doc.getElementById(id);
-        const text = (id) => $$(id).innerText.replace(/\s+/g, ' ');
-        const shown = (el) => { if (!el || el.getClientRects().length === 0) return false; const d = el.closest('details'); return !(d && !d.open && !el.closest('summary')); };   // 접힌 "더 보기" 안은 안 보이는 것
-
-        win.eval("save = setOwner('처음'); save = loadSave(); showSelect();");
+      await withGame(`처음 온 사람 안내 (${label})`, width, '?fake=1', async (g) => {
+        const { $$, win, doc, text, shown } = g;
+        putRecord(g, 'u1', '처음');
+        await signIn(g, 'u1');
 
         // 1번: 목표 안내
         const howto = text('howto');
@@ -750,25 +918,24 @@ async function run() {
 
         // 5번: 단추 정리
         const more = $$('more');
-        const inMore = ['newowner-btn', 'rename', 'export-btn'].every(id => more.contains($$(id))) && [...doc.querySelectorAll('#select-screen .io-import')].every(b => more.contains(b));
+        const inMore = ['rename', 'export-btn'].every(id => more.contains($$(id))) && [...doc.querySelectorAll('#select-screen .io-import')].every(b => more.contains(b));
         const openButtons = [...doc.querySelectorAll('#select-screen button')].filter(b => !b.classList.contains('card') && shown(b));
-        row(!more.open && inMore && openButtons.length === 1 && openButtons[0].id === 'ranking-btn', `5번 처음 보이는 단추는 "주인별 랭킹" 하나뿐이에요 (${label})`, `접힌 "더 보기" 안에 새 주인·이름 바꾸기·기록 내보내기·불러오기 · 보이는 단추: ${openButtons.map(b => b.innerText).join(', ')}`);
+        row(!more.open && inMore && openButtons.length === 1 && openButtons[0].id === 'ranking-btn', `5번 처음 보이는 단추는 "주인별 랭킹" 하나뿐이에요 (${label})`, `접힌 "더 보기" 안에 이름 바꾸기·기록 내보내기·불러오기 · 보이는 단추: ${openButtons.map(b => b.innerText).join(', ')}`);
         const moreText = more.textContent.replace(/\s+/g, ' ');
-        row(moreText.includes('다른 사람이 같은 기기로') && moreText.includes('같은 사람의 이름만 바꿔요'), `5번 "새 주인으로 시작"과 "이름 바꾸기"의 차이가 적혀 있어요 (${label})`, moreText);
-        const hiddenBefore = !shown($$('newowner-btn')) && !shown($$('rename')) && !shown($$('export-btn'));
+        row(moreText.includes('다른 사람이 같은 기기로') && moreText.includes('로그아웃') && moreText.includes('같은 사람의 이름만 바꿔요'), `5번 한 기기를 여러 사람이 쓰는 방법과 "이름 바꾸기"의 뜻이 적혀 있어요 (${label})`, moreText.slice(0, 140));
+        const hiddenBefore = !shown($$('rename')) && !shown($$('export-btn'));
         more.open = true;
-        row(hiddenBefore && shown($$('newowner-btn')) && shown($$('rename')) && shown($$('export-btn')), `5번 "더 보기"를 열면 단추가 보여요 (${label})`, '열기 전에는 안 보이고 열면 보임');
-        const slot = win.getComputedStyle($$('login-slot'));
-        row($$('login-slot').innerText.trim() === '로그인 자리' && slot.borderTopStyle === 'solid' && parseFloat(slot.borderTopWidth) <= 1.5, `5번 "로그인 자리"는 글자 그대로 두고 점선 대신 얇은 선이에요 (${label})`, `${$$('login-slot').innerText.trim()} · ${slot.borderTopStyle} ${slot.borderTopWidth}`);
-      } catch (e) {
-        skip(`처음 온 사람 안내 (${label})`, '게임 화면을 이 페이지 안에서 열 수 없었어요: ' + e.message);
-      } finally {
-        try { if (ls) {
-          sA === null ? ls.removeItem(SAVE_KEY) : ls.setItem(SAVE_KEY, sA);
-          sB === null ? ls.removeItem(OWNERS_KEY) : ls.setItem(OWNERS_KEY, sB);
-        } } catch (e) {}
-        if (f) f.remove();
-      }
+        row(hiddenBefore && shown($$('rename')) && shown($$('export-btn')), `5번 "더 보기"를 열면 단추가 보여요 (${label})`, '열기 전에는 안 보이고 열면 보임');
+      });
+    }
+
+    // 15. 화면 폭 (로그인 화면 기준): 폰·태블릿·컴퓨터에서 옆으로 잘리지 않는지
+    for (const [w, label] of [[360, '폰 (360)'], [768, '태블릿 (768)'], [1280, '컴퓨터 (1280)']]) {
+      await withGame(`화면 폭 ${label}`, w, '?fake=1', async (g) => {
+        const flow = g.doc.documentElement.scrollWidth <= w;
+        const slotRect = g.$$('login-slot').getBoundingClientRect();
+        row(flow && slotRect.left >= 0 && slotRect.right <= w && g.screen() === 'login', `화면 폭 ${label}`, `가로로 넘치지 않고 로그인 단추가 보여요 (내용 폭 ${g.doc.documentElement.scrollWidth})`);
+      });
     }
   }
 

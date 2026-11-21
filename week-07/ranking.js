@@ -49,3 +49,24 @@ function buildRanking(current, owners, stageList) {
   });
   return { overall, perStage };
 }
+
+// 서버에서 받은 여러 사람의 기록(문서 목록)을 랭킹 계산에 넣을 모양으로 바꾼다.
+// records: [{ uid, nickname, stages }], myUid: 나의 uid (나는 빼고 지금 기록으로 따로 넣는다), myNickname: 나의 별명
+// 남이 쓴 값이라 믿지 않고 한 번 거른다. 별명이 겹치면 uid 앞 4글자를 붙여 구분한다 (예: "토끼 #a1b2").
+function ownersFromRecords(records, myUid, myNickname, stageList) {
+  const owners = {};
+  const used = new Set([myNickname]);
+  for (const r of records || []) {
+    if (!r || typeof r !== 'object' || r.uid === myUid) continue;
+    const nick = typeof r.nickname === 'string' ? cleanName(r.nickname) : '';
+    if (!nick) continue;
+    const s = cleanSave({ owner: nick, stages: r.stages });
+    clampToStages(s, stageList);
+    let name = nick;
+    if (used.has(name)) name = `${nick} #${String(r.uid || '').slice(0, 4)}`;
+    if (used.has(name)) continue;   // 그래도 겹치면 건너뛴다
+    used.add(name);
+    owners[name] = { owner: name, stages: s.stages };
+  }
+  return owners;
+}
