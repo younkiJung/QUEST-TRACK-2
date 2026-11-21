@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>내 플랫폼 게임</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #1d2433; color: #fff; font-family: sans-serif; line-height: 1.5; }
+  [hidden] { display: none !important; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 16px; background: #141a27; border-bottom: 1px solid #3a4560; }
+  header h1 { margin: 0; font-size: 20px; flex: 1 1 auto; }
+  #who { color: #cfd8ee; }
+  #total { color: #ffd84d; font-weight: bold; }
+  #login-slot { padding: 6px 14px; border: 2px dashed #6b7896; border-radius: 8px; color: #aab4cc; font-size: 14px; }
+  #warn { margin: 0; padding: 8px 16px; background: #5a2d2d; color: #ffd1d1; font-size: 14px; }
+  main { max-width: 960px; margin: 0 auto; padding: 16px; }
+  h2 { margin: 0 0 12px; font-size: 22px; }
+  .note { color: #aab4cc; font-size: 14px; }
+  button { font: inherit; font-size: 16px; cursor: pointer; }
+  .big { padding: 10px 20px; border: 0; border-radius: 8px; background: #4da3ff; color: #08121f; font-weight: bold; }
+  .ghost { padding: 8px 14px; border: 1px solid #6b7896; border-radius: 8px; background: transparent; color: #fff; }
+  #name-form { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+  #name-form input { flex: 1 1 180px; min-width: 0; font-size: 18px; padding: 8px 12px; border-radius: 8px; border: 1px solid #6b7896; }
+  #cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 16px 0; }
+  .card { text-align: left; padding: 14px; border-radius: 12px; border: 2px solid #4da3ff; background: #26304a; color: #fff; }
+  .card.cleared { border-color: #7ee08a; }
+  .card:disabled { border-color: #3a4560; background: #1b2236; color: #7f8aa6; cursor: not-allowed; }
+  .card b { display: block; font-size: 18px; }
+  #play-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
+  #hud { font-weight: bold; }
+  #wrap { position: relative; margin: 0 auto; }
+  canvas { display: block; width: 100%; height: auto; border-radius: 8px; background: #8fd3ff; }
+  #clear { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 12px; text-align: center; background: rgba(10, 16, 30, 0.82); border-radius: 8px; }
+  #clear h2 { margin: 0; }
+  #clear .row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+  .pad { position: absolute; bottom: 10px; width: 64px; height: 64px; border-radius: 50%; border: 2px solid rgba(255,255,255,.7); background: rgba(20, 26, 39, .45); color: #fff; font-size: 26px; touch-action: none; user-select: none; -webkit-user-select: none; display: none; }
+  #pad-left { left: 10px; } #pad-right { left: 84px; } #pad-jump { right: 10px; width: 76px; height: 76px; }
+  @media (pointer: coarse), (max-width: 700px) { .pad { display: block; } }
+  #keys-help { display: none; }
+  @media (pointer: fine) and (min-width: 701px) { #keys-help { display: block; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>내 플랫폼 게임</h1>
+  <span id="who" hidden></span>
+  <span id="total" hidden></span>
+  <div id="login-slot">로그인 자리</div>
+</header>
+<p id="warn" hidden>이 브라우저가 저장을 막고 있어요. 기록은 이 창을 닫으면 사라져요.</p>
+
+<main>
+  <section id="name-screen" hidden>
+    <h2>이름을 정해요</h2>
+    <p class="note">기록 위에 보여 줄 별명이에요. 12글자까지 쓸 수 있어요. 실명이나 학교 이름은 쓰지 마세요.</p>
+    <form id="name-form">
+      <input id="name-input" maxlength="12" placeholder="별명" autocomplete="off" aria-label="별명">
+      <button class="big">시작</button>
+    </form>
+  </section>
+
+  <section id="select-screen" hidden>
+    <h2 id="select-title">스테이지 고르기</h2>
+    <p id="select-note" class="note"></p>
+    <div id="cards"></div>
+    <button class="ghost" id="rename">이름 바꾸기</button>
+  </section>
+
+  <section id="play-screen" hidden>
+    <div id="play-top">
+      <span id="hud"></span>
+      <button class="ghost" id="back">스테이지 고르기</button>
+    </div>
+    <div id="wrap">
+      <canvas id="canvas" width="800" height="450" aria-label="게임 화면"></canvas>
+      <button class="pad" id="pad-left" aria-label="왼쪽">◀</button>
+      <button class="pad" id="pad-right" aria-label="오른쪽">▶</button>
+      <button class="pad" id="pad-jump" aria-label="점프">▲</button>
+      <div id="clear" hidden></div>
+    </div>
+    <p id="keys-help" class="note">← → 또는 A D 로 걷고, 스페이스·↑·W 로 점프해요. 단추를 길게 누르면 더 높이 뛰어요. Esc 는 스테이지 고르기.</p>
+  </section>
+</main>
+
+<script src="save.js"></script>
+<script src="physics.js"></script>
+<script src="stages.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+let save = loadSave();
+
+// ---------- 화면 바꾸기 ----------
+function show(name) {
+  for (const s of ['name', 'select', 'play']) $(s + '-screen').hidden = s !== name;
+  if (name !== 'play') running = false;
+  refreshHeader();
+}
+
+function refreshHeader() {
+  const named = !!save.owner;
+  $('who').hidden = !named;
+  $('total').hidden = !named;
+  if (named) {
+    $('who').textContent = save.owner;
+    $('total').textContent = '🪙 ' + totalCoins(save);
+  }
+  $('warn').hidden = storageOk;
+}
+
+// ---------- 이름 ----------
+$('name-form').onsubmit = (e) => {
+  e.preventDefault();
+  const name = cleanName($('name-input').value);
+  if (!name) { $('name-input').focus(); return; }
+  save = setOwner(name);
+  showSelect();
+};
+
+$('rename').onclick = () => {
+  $('name-input').value = save.owner;
+  show('name');
+  $('name-input').focus();
+};
+
+// ---------- 스테이지 고르기 ----------
+function showSelect() {
+  show('select');
+  $('select-title').textContent = save.owner + '의 기록';
+  const cleared = STAGES.filter(s => stageRecord(save, s.id)).length;
+  $('select-note').textContent = cleared === STAGES.length
+    ? '모든 스테이지를 깼어요! 코인을 더 모으러 다시 해 볼까요?'
+    : '스테이지를 깨면 다음 스테이지가 열리고, 기록이 저장돼요.';
+  const box = $('cards');
+  box.replaceChildren();
+  for (const s of STAGES) {
+    const rec = stageRecord(save, s.id);
+    const open = isUnlocked(save, s.id);
+    const b = document.createElement('button');
+    b.className = 'card' + (rec ? ' cleared' : '');
+    b.disabled = !open;
+    const title = document.createElement('b');
+    title.textContent = `스테이지 ${s.id} · ${s.name}`;
+    const info = document.createElement('span');
+    info.textContent = !open ? '🔒 앞 스테이지를 먼저 깨요'
+      : rec ? `✅ 깼어요 · 코인 ${rec.coins}/${s.coins.length}` : '아직 안 깼어요';
+    b.append(title, info);
+    b.onclick = () => startStage(s);
+    box.append(b);
+  }
+}
+
+// ---------- 게임 ----------
+const canvas = $('canvas'), ctx = canvas.getContext('2d');
+const VIEW_H = 450;
+let viewW = 800;
+let run = null;          // 지금 하는 판
+let running = false;
+const keys = { left: false, right: false, jump: false };
+const touch = { left: false, right: false, jump: false };
+
+function fit() {
+  const avail = $('play-screen').clientWidth;
+  if (!avail) return;
+  viewW = avail < 600 ? 480 : 800;
+  if (canvas.width !== viewW) canvas.width = viewW;
+  const maxH = Math.max(200, window.innerHeight - 170);
+  $('wrap').style.width = Math.min(avail, maxH * viewW / VIEW_H) + 'px';
+}
+window.addEventListener('resize', fit);
+
+function startStage(stage) {
+  show('play');
+  fit();
+  if (document.activeElement) document.activeElement.blur();
+  run = { stage, player: newPlayer(stage), got: stage.coins.map(() => false), done: false, t: 0 };
+  $('clear').hidden = true;
+  updateHud();
+  if (!running) { running = true; last = performance.now(); acc = 0; requestAnimationFrame(frame); }
+}
+
+function updateHud() {
+  const n = run.got.filter(Boolean).length;
+  $('hud').textContent = `스테이지 ${run.stage.id} · ${run.stage.name} · 🪙 ${n}/${run.stage.coins.length}`;
+}
+
+function update() {
+  const p = run.player, st = run.stage;
+  run.t++;
+  stepPlayer(p, {
+    left: keys.left || touch.left,
+    right: keys.right || touch.right,
+    jump: keys.jump || touch.jump,
+  }, st);
+  if (p.dead) { run.player = newPlayer(st); return; }   // 떨어지면 처음 자리로 (먹은 코인은 그대로)
+  let changed = false;
+  st.coins.forEach((c, i) => { if (!run.got[i] && touchesCoin(p, c)) { run.got[i] = true; changed = true; } });
+  if (changed) updateHud();
+  if (touchesGoal(p, st.goal)) finish();
+}
+
+function finish() {
+  run.done = true;
+  const got = run.got.filter(Boolean).length;
+  const total = run.stage.coins.length;
+  const r = recordClear(run.stage.id, got);
+  save = r.save;
+  refreshHeader();
+  const box = $('clear');
+  box.replaceChildren();
+  const h = document.createElement('h2');
+  h.textContent = `스테이지 ${run.stage.id} 클리어!`;
+  const info = document.createElement('div');
+  const more = r.firstClear ? '처음 깼어요!' : r.improved ? `코인 기록을 늘렸어요 (이전 ${r.prev}개)` : `기록은 그대로예요 (최고 ${r.save.stages[run.stage.id].coins}개)`;
+  info.textContent = `코인 ${got}/${total} · ${more}`;
+  const row = document.createElement('div');
+  row.className = 'row';
+  const next = STAGES.find(s => s.id === run.stage.id + 1);
+  const mk = (text, fn, cls) => { const b = document.createElement('button'); b.textContent = text; b.className = cls; b.onclick = fn; return b; };
+  if (next) row.append(mk('다음 스테이지', () => startStage(next), 'big'));
+  row.append(mk('다시 하기', () => startStage(run.stage), next ? 'ghost' : 'big'));
+  row.append(mk('스테이지 고르기', showSelect, 'ghost'));
+  box.append(h, info);
+  if (!next) { const all = document.createElement('div'); all.textContent = '마지막 스테이지까지 모두 깼어요!'; box.append(all); }
+  box.append(row);
+  if (!r.saved) { const w = document.createElement('div'); w.className = 'note'; w.textContent = '이 브라우저가 저장을 막고 있어서 기록이 남지 않아요.'; box.append(w); }
+  box.hidden = false;
+}
+
+$('back').onclick = showSelect;
+
+// ---------- 그리기 ----------
+function draw() {
+  const { stage, player: p } = run;
+  const cam = Math.max(0, Math.min(p.x + PHYS.W / 2 - viewW / 2, stage.width - viewW));
+  const g = ctx.createLinearGradient(0, 0, 0, VIEW_H);
+  g.addColorStop(0, '#6cc0ff'); g.addColorStop(1, '#d6f0ff');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, viewW, VIEW_H);
+
+  // 구름 (천천히 따라오는 배경)
+  ctx.fillStyle = 'rgba(255,255,255,.85)';
+  for (let i = 0; i < 12; i++) {
+    const cx = ((i * 330 - cam * 0.4) % (viewW + 300) + viewW + 300) % (viewW + 300) - 100;
+    const cy = 50 + (i * 47) % 110;
+    ctx.beginPath(); ctx.ellipse(cx, cy, 46, 16, 0, 0, 7); ctx.ellipse(cx + 26, cy - 10, 30, 14, 0, 0, 7); ctx.fill();
+  }
+
+  ctx.save(); ctx.translate(-Math.round(cam), 0);
+  for (const r of stage.platforms) {
+    if (r.x > cam + viewW || r.x + r.w < cam) continue;
+    ctx.fillStyle = '#8a5a35'; ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.fillStyle = '#4cc05a'; ctx.fillRect(r.x, r.y, r.w, 8);
+  }
+  // 깃발
+  const gl = stage.goal;
+  ctx.fillStyle = '#dfe6f2'; ctx.fillRect(gl.x + 12, gl.y, 5, gl.h);
+  ctx.fillStyle = '#ff5a6e'; ctx.beginPath(); ctx.moveTo(gl.x + 17, gl.y + 2); ctx.lineTo(gl.x + 17 + 26, gl.y + 14); ctx.lineTo(gl.x + 17, gl.y + 26); ctx.fill();
+  // 코인
+  stage.coins.forEach((c, i) => {
+    if (run.got[i]) return;
+    const w = Math.abs(Math.cos(run.t / 20 + i)) * 9 + 2;
+    ctx.fillStyle = '#ffd84d'; ctx.beginPath(); ctx.ellipse(c.x, c.y, w, 10, 0, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#c99a00'; ctx.lineWidth = 2; ctx.stroke();
+  });
+  // 캐릭터
+  ctx.fillStyle = '#3b6fd8'; ctx.beginPath(); ctx.roundRect(p.x, p.y, PHYS.W, PHYS.H, 6); ctx.fill();
+  ctx.fillStyle = '#fff'; const ex = p.facing > 0 ? 12 : 3;
+  ctx.fillRect(p.x + ex, p.y + 8, 5, 7); ctx.fillRect(p.x + ex + 7, p.y + 8, 5, 7);
+  ctx.fillStyle = '#111'; const pe = p.facing > 0 ? 2 : 0;
+  ctx.fillRect(p.x + ex + pe, p.y + 11, 3, 4); ctx.fillRect(p.x + ex + 7 + pe, p.y + 11, 3, 4);
+  ctx.restore();
+}
+
+let last = 0, acc = 0;
+function frame(t) {
+  if (!running) return;
+  acc += Math.min(100, t - last); last = t;
+  while (acc >= 1000 / 60) { if (!run.done) update(); acc -= 1000 / 60; }
+  draw();
+  requestAnimationFrame(frame);
+}
+
+// ---------- 입력 ----------
+const KEYMAP = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ArrowUp: 'jump', KeyW: 'jump', Space: 'jump' };
+window.addEventListener('keydown', (e) => {
+  if (!running) return;
+  if (e.code === 'Escape') { showSelect(); return; }
+  const k = KEYMAP[e.code];
+  if (k) { keys[k] = true; e.preventDefault(); }
+});
+window.addEventListener('keyup', (e) => { const k = KEYMAP[e.code]; if (k) keys[k] = false; });
+window.addEventListener('blur', () => { keys.left = keys.right = keys.jump = false; });
+
+function holdButton(id, key) {
+  const el = $(id);
+  el.addEventListener('pointerdown', (e) => { e.preventDefault(); touch[key] = true; el.setPointerCapture(e.pointerId); });
+  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) el.addEventListener(type, () => { touch[key] = false; });
+  el.addEventListener('contextmenu', (e) => e.preventDefault());
+}
+holdButton('pad-left', 'left'); holdButton('pad-right', 'right'); holdButton('pad-jump', 'jump');
+
+// ---------- 시작 ----------
+if (save.owner) showSelect(); else show('name');
+</script>
+</body>
+</html>
