@@ -118,6 +118,30 @@
     #clear button { font-size: 14px; padding: 4px 12px; min-height: 36px; }
     #clear .row { gap: 6px; margin-top: 2px; }
   }
+
+  /* 처음 온 사람을 위한 안내 */
+  #howto, #ready, #touch-help, .more-item .note { word-break: keep-all; }   /* 한국어는 단어 중간에서 줄바꿈하지 않게 */
+  #howto { margin: 10px 0; padding: 10px 14px; border: 3px solid var(--sun); border-radius: 16px; background: #fffbe6; color: var(--ink); font-size: 16px; }
+  #howto ul { margin: 6px 0 0; padding-left: 20px; }
+  #howto li { margin: 2px 0; }
+  #more { margin-top: 12px; padding: 0 14px; border: 3px solid #cfe6f7; border-radius: 16px; background: #f4fbff; }
+  #more > summary { min-height: 44px; padding: 10px 0; cursor: pointer; font-weight: 800; color: var(--sky-night); }
+  #more[open] > summary { margin-bottom: 6px; border-bottom: 2px solid #cfe6f7; }
+  .more-item { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 0; }
+  .more-item .note { flex: 1 1 200px; margin: 0; }
+  /* 시작 안내 띠: 눌러도 아래 단추가 눌리도록 pointer-events 를 끈다 */
+  #ready { position: absolute; top: 10px; left: 10px; right: 10px; padding: 8px 12px; border-radius: 14px; background: rgba(6, 40, 74, .86); color: #fff;
+    font-size: 15px; font-weight: 700; line-height: 1.4; text-align: center; pointer-events: none; }
+  #ready .ready-title { font-size: 18px; font-weight: 900; }
+  #ready .ready-go { color: var(--sun); }
+  .pad .arrow { display: block; font-size: 26px; line-height: 1; }
+  .pad .lbl { display: block; font-size: 14px; line-height: 1.2; }
+  #pad-jump { flex-direction: column; justify-content: center; align-items: center; padding: 0; }
+  #touch-help { display: none; }
+  @media (pointer: coarse), (max-width: 700px) { #touch-help { display: block; } #pad-jump { display: flex; } }
+  @media (max-width: 700px) { #ready { top: 6px; left: 6px; right: 6px; padding: 6px 8px; font-size: 14px; } #ready .ready-title { font-size: 16px; } }
+  /* "로그인 자리"는 글자는 그대로 두고, 처음 온 사람에게 고장 난 칸처럼 보이지 않게 얇고 흐린 선으로 */
+  #login-slot { border: 1px solid rgba(6, 40, 74, .4); background: transparent; font-weight: 600; font-size: 14px; }
 </style>
 </head>
 <body>
@@ -161,17 +185,33 @@
   <section id="select-screen" hidden>
     <h2 id="select-title">스테이지 고르기</h2>
     <p id="select-note" class="note"></p>
+    <div id="howto">
+      <b>🎮 이렇게 해요</b>
+      <ul>
+        <li>🚩 깃발까지 가면 스테이지를 깨요.</li>
+        <li>⭐ 별은 최대 3개예요. 깨면 1개, 코인을 다 모으면 +1, 목표 시간 안에 깨면 +1.</li>
+      </ul>
+    </div>
     <div id="cards"></div>
     <div class="io-row">
       <button class="ghost" id="ranking-btn">주인별 랭킹</button>
-      <button class="ghost" id="newowner-btn">새 주인으로 시작</button>
     </div>
-    <div class="io-row">
-      <button class="ghost" id="rename">이름 바꾸기</button>
-      <button class="ghost" id="export-btn">기록 내보내기</button>
-      <button class="ghost io-import" type="button">기록 불러오기</button>
-    </div>
-    <p class="note">기록 내보내기는 기록을 파일로 저장해요. 기기를 바꾸거나 브라우저를 비워도 불러와서 이어 할 수 있어요.</p>
+    <details id="more">
+      <summary>더 보기 (새 주인 · 이름 · 기록 옮기기)</summary>
+      <div class="more-item">
+        <button class="ghost" id="newowner-btn">새 주인으로 시작</button>
+        <span class="note">다른 사람이 같은 기기로 할 때 눌러요. 지금 기록은 보관돼요.</span>
+      </div>
+      <div class="more-item">
+        <button class="ghost" id="rename">이름 바꾸기</button>
+        <span class="note">같은 사람의 이름만 바꿔요. 기록은 그대로예요.</span>
+      </div>
+      <div class="more-item">
+        <button class="ghost" id="export-btn">기록 내보내기</button>
+        <button class="ghost io-import" type="button">기록 불러오기</button>
+        <span class="note">기록을 파일로 옮겨요. 기기를 바꾸거나 브라우저를 비워도 불러와서 이어 할 수 있어요.</span>
+      </div>
+    </details>
   </section>
 
   <section id="ranking-screen" hidden>
@@ -195,9 +235,15 @@
       <canvas id="canvas" width="800" height="450" aria-label="게임 화면"></canvas>
       <button class="pad" id="pad-left" aria-label="왼쪽">◀</button>
       <button class="pad" id="pad-right" aria-label="오른쪽">▶</button>
-      <button class="pad" id="pad-jump" aria-label="점프">▲</button>
+      <button class="pad" id="pad-jump" aria-label="점프"><span class="arrow">▲</span><span class="lbl">점프</span></button>
+      <div id="ready" hidden>
+        <div class="ready-title">🚩 깃발까지 가요!</div>
+        <div>🪙 코인을 다 모으면 별 +1 · ⏱ <span id="ready-par"></span>초 안에 깨면 별 +1</div>
+        <div class="ready-go">움직이면 시간이 시작돼요</div>
+      </div>
       <div id="clear" hidden></div>
     </div>
+    <p id="touch-help" class="note">◀ ▶ 로 걷고 ▲ 점프로 뛰어요. 점프 단추를 길게 누르면 더 높이 뛰어요.</p>
     <p id="keys-help" class="note">← → 또는 A D 로 걷고, 스페이스·↑·W 로 점프해요. 단추를 길게 누르면 더 높이 뛰어요. Esc 는 스테이지 고르기.</p>
   </section>
 </main>
@@ -250,6 +296,7 @@ $('rename').onclick = () => {
 };
 
 // ---------- 스테이지 고르기 ----------
+const LEVEL_WORD = ['', '쉬움', '보통', '어려움'];
 function showSelect() {
   prevOwnerForNew = null;   // 스테이지 고르는 화면에 왔으면 "새 주인" 취소 표시는 끝난 것
   show('select');
@@ -273,7 +320,7 @@ function showSelect() {
       : rec ? `✅ 깼어요 · 별 ${starText(rec.stars || 1)} · 코인 ${rec.coins}/${s.coins.length}` + (rec.time ? ` · 최고 ${formatTime(rec.time)}초` : '') : '아직 안 깼어요';
     const level = document.createElement('span');
     level.className = 'level';
-    level.textContent = `난이도 ${'★'.repeat(s.level)}${'☆'.repeat(3 - s.level)} · ${s.hint}`;
+    level.textContent = `난이도 ${LEVEL_WORD[s.level]} · ${s.hint}`;   // 별(★)과 헷갈리지 않게 난이도는 글자로
     b.append(title, level, info);
     b.onclick = () => startStage(s);
     box.append(b);
@@ -303,8 +350,10 @@ function startStage(stage) {
   show('play');
   fit();
   if (document.activeElement) document.activeElement.blur();
-  run = { stage, player: newPlayer(stage), got: stage.coins.map(() => false), done: false, t: 0 };
+  run = { stage, player: newPlayer(stage), got: stage.coins.map(() => false), done: false, t: 0, started: false };
   $('clear').hidden = true;
+  $('ready-par').textContent = stage.par;
+  $('ready').hidden = false;   // 시작 안내: 처음 움직일 때까지 시간은 흐르지 않는다
   updateHud();
   if (!running) { running = true; last = performance.now(); acc = 0; requestAnimationFrame(frame); }
 }
@@ -328,12 +377,15 @@ function updateHud() {
 
 function update() {
   const p = run.player, st = run.stage;
-  run.t++;
-  stepPlayer(p, {
+  const input = {
     left: keys.left || touch.left,
     right: keys.right || touch.right,
     jump: keys.jump || touch.jump,
-  }, st);
+  };
+  // 처음 움직이는 순간부터 시간을 센다 (그 전에는 캐릭터가 땅에 내려앉기만 한다)
+  if (!run.started && (input.left || input.right || input.jump)) { run.started = true; $('ready').hidden = true; }
+  if (run.started) run.t++;
+  stepPlayer(p, run.started ? input : {}, st);
   if (p.dead) { run.player = newPlayer(st); return; }   // 떨어지면 처음 자리로 (먹은 코인은 그대로)
   let changed = false;
   st.coins.forEach((c, i) => { if (!run.got[i] && touchesCoin(p, c)) { run.got[i] = true; changed = true; } });

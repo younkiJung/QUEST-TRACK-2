@@ -417,8 +417,8 @@ async function run() {
       row(hudText.includes('목표 15초'), '플레이 중 목표 시간 표시', hudText);
       win.eval('showSelect()');
       const cardTexts = [...f.contentDocument.querySelectorAll('#cards .card')].map(c => c.innerText.replace(/\s+/g, ' '));
-      row(cardTexts.length === 3 && cardTexts.every((t, i) => t.includes('난이도 ' + '★'.repeat(i + 1) + '☆'.repeat(2 - i)) && t.includes(STAGES[i].hint)),
-        '스테이지 카드에 난이도와 설명', cardTexts.map(t => t.slice(0, 40)).join(' / '));
+      row(cardTexts.length === 3 && cardTexts.every((t, i) => t.includes('난이도 ' + ['쉬움', '보통', '어려움'][i]) && !t.includes('난이도 ★') && t.includes(STAGES[i].hint)),
+        '스테이지 카드에 난이도(글자)와 설명', cardTexts.map(t => t.slice(0, 40)).join(' / '));
       const stored = JSON.parse(ls.getItem(SAVE_KEY));
       row(stored.stages['1'].time === 1000, '브라우저에 저장된 시간', `stages.1.time = ${stored.stages['1'].time} (1/100초)`);
     } catch (e) {
@@ -652,7 +652,7 @@ async function run() {
           const hs = [hdr, btn, body].map(hue);
           row(hs.every(x => x.h >= 190 && x.h <= 215 && x.s >= 0.45), '중심 색은 하늘색', `위쪽 바 ${Math.round(hs[0].h)}° · 단추 ${Math.round(hs[1].h)}° · 바탕 ${Math.round(hs[2].h)}° (하늘색은 약 190~215°)`);
         }
-        snap('스테이지 고르기', good + " showSelect();");
+        snap('스테이지 고르기', good + " showSelect(); document.getElementById('more').open = true;");
         snap('안내 글(성공)', "ioMsg('기록을 불러왔어요.', false);");
         snap('안내 글(실패)', "ioMsg('이 게임에서 내보낸 기록 파일이 아니에요. 지금 기록은 그대로예요.', true);");
         snap('주인별 랭킹', "startNewOwner(); setOwner('고양이'); recordClear(1, 5, 900, 3); save = loadSave(); showRanking();");
@@ -690,6 +690,78 @@ async function run() {
         row(wide.length === 0, `화면이 옆으로 잘리지 않아요 (${name})`, wide.length ? wide.map(([k, v]) => `${k} ${v.overflow}px`).join(', ') : `모든 화면의 내용 폭이 ${width}px 이하`);
       } catch (e) {
         skip(`디자인 확인 (${name})`, '게임 화면을 이 페이지 안에서 열 수 없었어요: ' + e.message);
+      } finally {
+        try { if (ls) {
+          sA === null ? ls.removeItem(SAVE_KEY) : ls.setItem(SAVE_KEY, sA);
+          sB === null ? ls.removeItem(OWNERS_KEY) : ls.setItem(OWNERS_KEY, sB);
+        } } catch (e) {}
+        if (f) f.remove();
+      }
+    }
+  }
+
+  // 10. 처음 온 사람을 위한 안내 (진단 표 1~5번을 고친 것). 폰과 컴퓨터 폭에서 처음 방문한 사람처럼 따라가 봄.
+  if (html !== null) {
+    for (const [width, label] of [[360, '폰 360'], [1280, '컴퓨터 1280']]) {
+      let f = null, ls = null, sA = null, sB = null;
+      try {
+        f = await loadFrame('../index.html', width);
+        const win = f.contentWindow, doc = f.contentDocument;
+        ls = win.localStorage; sA = ls.getItem(SAVE_KEY); sB = ls.getItem(OWNERS_KEY);
+        ls.removeItem(SAVE_KEY); ls.removeItem(OWNERS_KEY);
+        const $$ = (id) => doc.getElementById(id);
+        const text = (id) => $$(id).innerText.replace(/\s+/g, ' ');
+        const shown = (el) => { if (!el || el.getClientRects().length === 0) return false; const d = el.closest('details'); return !(d && !d.open && !el.closest('summary')); };   // 접힌 "더 보기" 안은 안 보이는 것
+
+        win.eval("save = setOwner('처음'); save = loadSave(); showSelect();");
+
+        // 1번: 목표 안내
+        const howto = text('howto');
+        row(shown($$('howto')) && howto.includes('깃발') && howto.includes('스테이지를 깨요') && howto.includes('코인'), `1번 목표 안내가 스테이지 고르는 화면에 있어요 (${label})`, howto);
+        win.eval("startStage(STAGES[0]);");
+        const ready = $$('ready');
+        row(shown(ready) && ready.innerText.includes('깃발까지 가요') && ready.innerText.includes('12초') && ready.innerText.includes('움직이면 시간이 시작돼요'), `1번 시작할 때 목표 안내 띠가 보여요 (${label})`, text('ready'));
+        row(win.getComputedStyle(ready).pointerEvents === 'none', '안내 띠는 아래 단추를 가리지 않아요', 'pointer-events: none (폰의 ◀ ▶ ▲ 단추가 그대로 눌려요)');
+
+        // 3번: 움직이기 전에는 시간이 안 흐르고, 움직이면 시작
+        const before = win.eval(`(() => { for (let i = 0; i < 60; i++) update(); return { t: run.t, started: run.started, ground: run.player.onGround, y: run.player.y }; })()`);
+        row(before.t === 0 && before.started === false && before.ground && before.y === 390 - 32 && shown(ready), `3번 움직이기 전에는 시간이 안 흘러요 (${label})`, `60프레임(1초) 뒤에도 시간 ${before.t} · 캐릭터는 땅에 내려앉았고 · 안내 띠가 그대로 보여요`);
+        const after = win.eval(`(() => { keys.right = true; update(); const r = { t: run.t, started: run.started }; keys.right = false; return r; })()`);
+        row(after.started === true && after.t === 1 && ready.hidden, `3번 처음 움직이면 시간이 시작돼요 (${label})`, `움직인 첫 프레임에 시간 ${after.t} · 안내 띠 사라짐`);
+        win.eval("startStage(STAGES[0]);");
+        row(win.eval('run.t') === 0 && win.eval('run.started') === false && !ready.hidden, `3번 다시 하기를 하면 다시 준비 상태예요 (${label})`, '시간 0 · 안내 띠 다시 보임');
+        const jumpFirst = win.eval(`(() => { keys.jump = true; update(); const r = { t: run.t, started: run.started }; keys.jump = false; return r; })()`);
+        row(jumpFirst.started && jumpFirst.t === 1, `3번 점프로 시작해도 시간이 시작돼요 (${label})`, '걷지 않고 점프만 눌러도 시작');
+
+        // 2번: 조작 설명
+        const touchHelp = $$('touch-help'), keysHelp = $$('keys-help');
+        if (width < 700) {
+          row(shown(touchHelp) && !shown(keysHelp) && touchHelp.innerText.includes('점프') && touchHelp.innerText.includes('길게'), `2번 폰에 조작 설명이 보여요 (${label})`, text('touch-help'));
+          row(shown($$('pad-jump')) && $$('pad-jump').innerText.includes('점프'), '2번 점프 단추에 "점프" 글자가 있어요', $$('pad-jump').innerText.replace(/\s+/g, ' '));
+        } else {
+          row(shown(keysHelp) && !shown(touchHelp) && keysHelp.innerText.includes('점프') && keysHelp.innerText.includes('길게'), `2번 컴퓨터에는 키보드 조작 설명이 보여요 (${label})`, text('keys-help').slice(0, 70));
+        }
+
+        // 4번: 난이도는 글자, 별 규칙 안내
+        win.eval("showSelect();");
+        const cards = [...doc.querySelectorAll('#cards .card')].map(c => c.innerText.replace(/\s+/g, ' '));
+        row(cards.length === 3 && cards[0].includes('난이도 쉬움') && cards[1].includes('난이도 보통') && cards[2].includes('난이도 어려움') && cards.every(c => !c.includes('난이도 ★')), `4번 난이도는 글자(쉬움·보통·어려움)로 보여요 (${label})`, cards.map(c => c.slice(0, 26)).join(' / '));
+        row(howto.includes('별은 최대 3개') && howto.includes('코인을 다 모으면') && howto.includes('목표 시간 안에'), `4번 별을 받는 방법이 미리 적혀 있어요 (${label})`, howto);
+
+        // 5번: 단추 정리
+        const more = $$('more');
+        const inMore = ['newowner-btn', 'rename', 'export-btn'].every(id => more.contains($$(id))) && [...doc.querySelectorAll('#select-screen .io-import')].every(b => more.contains(b));
+        const openButtons = [...doc.querySelectorAll('#select-screen button')].filter(b => !b.classList.contains('card') && shown(b));
+        row(!more.open && inMore && openButtons.length === 1 && openButtons[0].id === 'ranking-btn', `5번 처음 보이는 단추는 "주인별 랭킹" 하나뿐이에요 (${label})`, `접힌 "더 보기" 안에 새 주인·이름 바꾸기·기록 내보내기·불러오기 · 보이는 단추: ${openButtons.map(b => b.innerText).join(', ')}`);
+        const moreText = more.textContent.replace(/\s+/g, ' ');
+        row(moreText.includes('다른 사람이 같은 기기로') && moreText.includes('같은 사람의 이름만 바꿔요'), `5번 "새 주인으로 시작"과 "이름 바꾸기"의 차이가 적혀 있어요 (${label})`, moreText);
+        const hiddenBefore = !shown($$('newowner-btn')) && !shown($$('rename')) && !shown($$('export-btn'));
+        more.open = true;
+        row(hiddenBefore && shown($$('newowner-btn')) && shown($$('rename')) && shown($$('export-btn')), `5번 "더 보기"를 열면 단추가 보여요 (${label})`, '열기 전에는 안 보이고 열면 보임');
+        const slot = win.getComputedStyle($$('login-slot'));
+        row($$('login-slot').innerText.trim() === '로그인 자리' && slot.borderTopStyle === 'solid' && parseFloat(slot.borderTopWidth) <= 1.5, `5번 "로그인 자리"는 글자 그대로 두고 점선 대신 얇은 선이에요 (${label})`, `${$$('login-slot').innerText.trim()} · ${slot.borderTopStyle} ${slot.borderTopWidth}`);
+      } catch (e) {
+        skip(`처음 온 사람 안내 (${label})`, '게임 화면을 이 페이지 안에서 열 수 없었어요: ' + e.message);
       } finally {
         try { if (ls) {
           sA === null ? ls.removeItem(SAVE_KEY) : ls.setItem(SAVE_KEY, sA);
