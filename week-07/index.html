@@ -20,6 +20,13 @@
   button { font: inherit; font-size: 16px; cursor: pointer; }
   .big { padding: 10px 20px; border: 0; border-radius: 8px; background: #4da3ff; color: #08121f; font-weight: bold; }
   .ghost { padding: 8px 14px; border: 1px solid #6b7896; border-radius: 8px; background: transparent; color: #fff; }
+  .io-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+  #io-msg { margin: 0 0 12px; font-size: 15px; }
+  #io-msg.good { color: #9be6a6; }
+  #io-msg.bad { color: #ffb3b3; font-weight: bold; }
+  #import-panel { margin-bottom: 16px; padding: 12px 16px; border: 2px solid #ffd84d; border-radius: 12px; background: #26304a; }
+  #import-panel h2 { font-size: 18px; margin-bottom: 8px; }
+  #import-panel p { margin: 4px 0; }
   #name-form { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
   #name-form input { flex: 1 1 180px; min-width: 0; font-size: 18px; padding: 8px 12px; border-radius: 8px; border: 1px solid #6b7896; }
   #cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 16px 0; }
@@ -62,6 +69,19 @@
 <p id="warn" hidden>이 브라우저가 저장을 막고 있어요. 기록은 이 창을 닫으면 사라져요.</p>
 
 <main>
+  <p id="io-msg" class="note" role="status" hidden></p>
+  <section id="import-panel" hidden>
+    <h2>기록 불러오기</h2>
+    <p>지금 기록: <b id="import-now"></b></p>
+    <p>파일의 기록: <b id="import-new"></b></p>
+    <p class="note" id="import-extra">바꾸면 지금 기록은 사라져요.</p>
+    <div class="io-row">
+      <button class="big" id="import-yes">파일의 기록으로 바꾸기</button>
+      <button class="ghost" id="import-no">취소</button>
+    </div>
+  </section>
+  <input type="file" id="import-file" accept=".json,application/json" hidden>
+
   <section id="name-screen" hidden>
     <h2>이름을 정해요</h2>
     <p class="note">기록 위에 보여 줄 별명이에요. 12글자까지 쓸 수 있어요. 실명이나 학교 이름은 쓰지 마세요.</p>
@@ -69,13 +89,20 @@
       <input id="name-input" maxlength="12" placeholder="별명" autocomplete="off" aria-label="별명">
       <button class="big">시작</button>
     </form>
+    <p class="note">다른 기기에서 쓰던 기록이 있나요? 파일로 옮겨 올 수 있어요.</p>
+    <button class="ghost io-import" type="button">기록 불러오기</button>
   </section>
 
   <section id="select-screen" hidden>
     <h2 id="select-title">스테이지 고르기</h2>
     <p id="select-note" class="note"></p>
     <div id="cards"></div>
-    <button class="ghost" id="rename">이름 바꾸기</button>
+    <div class="io-row">
+      <button class="ghost" id="rename">이름 바꾸기</button>
+      <button class="ghost" id="export-btn">기록 내보내기</button>
+      <button class="ghost io-import" type="button">기록 불러오기</button>
+    </div>
+    <p class="note">기록 내보내기는 기록을 파일로 저장해요. 기기를 바꾸거나 브라우저를 비워도 불러와서 이어 할 수 있어요.</p>
   </section>
 
   <section id="play-screen" hidden>
@@ -104,6 +131,7 @@ let save = loadSave();
 // ---------- 화면 바꾸기 ----------
 function show(name) {
   for (const s of ['name', 'select', 'play']) $(s + '-screen').hidden = s !== name;
+  if (name === 'play') { $('io-msg').hidden = true; $('import-panel').hidden = true; }
   if (name !== 'play') running = false;
   refreshHeader();
 }
@@ -343,6 +371,89 @@ function holdButton(id, key) {
   el.addEventListener('contextmenu', (e) => e.preventDefault());
 }
 holdButton('pad-left', 'left'); holdButton('pad-right', 'right'); holdButton('pad-jump', 'jump');
+
+// ---------- 기록 내보내기 · 불러오기 ----------
+// 파일 글을 만들고 검사하는 건 save.js, 여기는 단추와 확인 창만 맡는다.
+let pendingImport = null;
+
+function ioMsg(text, bad) {
+  const el = $('io-msg');
+  el.hidden = false;
+  el.textContent = text;
+  el.className = 'note ' + (bad ? 'bad' : 'good');
+}
+
+function summarize(s) {
+  const n = Object.keys(s.stages).length;
+  if (n === 0 && !s.owner) return '없음';
+  const stars = Object.values(s.stages).reduce((sum, v) => sum + (v.stars || 1), 0);
+  return `${s.owner || '(이름 없음)'} · 깬 스테이지 ${n}개 · 코인 ${totalCoins(s)} · 별 ${stars}`;
+}
+
+function exportRecord() {
+  const cur = loadSave();
+  if (!cur.owner && Object.keys(cur.stages).length === 0) {
+    ioMsg('아직 내보낼 기록이 없어요. 이름을 정하고 스테이지를 깬 뒤에 해 보세요.', true);
+    return;
+  }
+  const url = URL.createObjectURL(new Blob([makeExportText(cur)], { type: 'application/json' }));
+  const d = new Date();
+  const ymd = '' + d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `platformer-record-${ymd}.json`;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  ioMsg(`기록을 파일(${a.download})로 저장했어요. 다운로드 폴더를 확인해 주세요.`, false);
+}
+
+function handleImportText(text) {
+  const r = parseImport(text, STAGES);
+  if (!r.ok) {
+    pendingImport = null;
+    $('import-panel').hidden = true;
+    ioMsg(r.error + ' 지금 기록은 그대로예요.', true);
+    return;
+  }
+  pendingImport = r;
+  $('import-now').textContent = summarize(loadSave());
+  $('import-new').textContent = summarize(r.save) + (r.exportedAt ? ` · 저장한 날 ${r.exportedAt}` : '');
+  $('import-extra').textContent = '바꾸면 지금 기록은 사라져요.' + (r.dropped ? ` (읽을 수 없는 기록 ${r.dropped}개는 뺐어요.)` : '');
+  $('io-msg').hidden = true;
+  $('import-panel').hidden = false;
+}
+
+$('export-btn').onclick = exportRecord;
+for (const b of document.querySelectorAll('.io-import')) b.onclick = () => $('import-file').click();
+
+$('import-file').onchange = () => {
+  const file = $('import-file').files[0];
+  $('import-file').value = '';   // 같은 파일을 다시 골라도 반응하게
+  if (!file) return;
+  if (file.size > EXPORT_MAX_CHARS) { ioMsg('파일이 너무 커요. 이 게임의 기록 파일이 아니에요. 지금 기록은 그대로예요.', true); return; }
+  const reader = new FileReader();
+  reader.onload = () => handleImportText(String(reader.result));
+  reader.onerror = () => ioMsg('파일을 읽지 못했어요. 지금 기록은 그대로예요.', true);
+  reader.readAsText(file);
+};
+
+$('import-yes').onclick = () => {
+  if (!pendingImport) return;
+  const r = replaceSave(pendingImport.save);
+  pendingImport = null;
+  $('import-panel').hidden = true;
+  save = loadSave();
+  ioMsg(r.saved ? '기록을 불러왔어요.' : '기록을 불러왔지만 이 브라우저가 저장을 막고 있어요. 창을 닫으면 사라져요.', !r.saved);
+  if (save.owner) showSelect(); else show('name');
+};
+
+$('import-no').onclick = () => {
+  pendingImport = null;
+  $('import-panel').hidden = true;
+  ioMsg('취소했어요. 지금 기록은 그대로예요.', false);
+};
 
 // ---------- 시작 ----------
 if (save.owner) showSelect(); else show('name');

@@ -160,6 +160,40 @@ async function run() {
     row(['1', '2', '3'].every(k => badStars.stages[k] && badStars.stages[k].stars === undefined && badStars.stages[k].coins === 1), '이상한 별 걸러내기', '0·4·글자는 버리고 나머지 기록은 살려요.');
     const vs = recordClear(1, 1, 1000, 9);
     row(!vs.starsImproved && vs.bestStars === null, '별 개수가 이상하게 들어와도', '1~3이 아니면 저장하지 않아요.');
+
+    // 기록 내보내기 · 불러오기 (파일 글을 만들고 검사하는 규칙)
+    localStorage.removeItem(SAVE_KEY);
+    setOwner('토끼'); recordClear(1, 5, 1100, 3); recordClear(2, 4, 900, 2);
+    const cur = loadSave();
+    const fileText = makeExportText(cur);
+    let fileObj = null;
+    try { fileObj = JSON.parse(fileText); } catch (e) {}
+    row(!!fileObj && same(Object.keys(fileObj).sort(), ['app', 'exportedAt', 'owner', 'stages', 'v']) && fileObj.app === 'platformer-save' && fileObj.v === 1,
+      '내보낸 파일 모양', '앱 표시 · 버전 · 날짜 · 이름 · 스테이지 기록만 들어 있어요 (다른 정보는 없어요).');
+    const back = parseImport(fileText, STAGES);
+    row(back.ok && same(back.save, cur) && back.dropped === 0, '내보냈다가 불러오면 똑같아요', `이름 ${back.ok ? back.save.owner : '?'} · 스테이지 ${back.ok ? Object.keys(back.save.stages).length : '?'}개`);
+    row(same(loadSave(), cur), '파일 검사만으로는 기록이 바뀌지 않아요', '검사는 읽기만 해요.');
+    const bads = [
+      ['글자', '이건 기록이 아니에요'], ['빈 글', ''], ['배열', '[1,2]'],
+      ['다른 앱', JSON.stringify({ app: 'other', v: 1, owner: 'a', stages: {} })],
+      ['앱 표시 없음', JSON.stringify({ v: 1, owner: 'a', stages: {} })],
+      ['더 새로운 버전', JSON.stringify({ app: 'platformer-save', v: 2, owner: 'a', stages: {} })],
+      ['옛 버전', JSON.stringify({ app: 'platformer-save', v: 0, owner: 'a', stages: {} })],
+      ['빈 기록', JSON.stringify({ app: 'platformer-save', v: 1, owner: '', stages: {} })],
+      ['너무 큰 파일', 'x'.repeat(200001)],
+    ];
+    const notRejected = bads.filter(([, t]) => { const r = parseImport(t, STAGES); return r.ok || !r.error; }).map(b => b[0]);
+    row(notRejected.length === 0, '잘못된 파일은 이유를 알려 주고 거절해요', notRejected.length ? '거절하지 못한 것: ' + notRejected.join(', ') : bads.map(b => b[0]).join(' · '));
+    const mixed = parseImport(JSON.stringify({ app: 'platformer-save', v: 1, owner: '  <b>x</b>  ', stages: {
+      '1': { cleared: true, coins: 99, stars: 3, time: 500 }, '7': { cleared: true, coins: 1 }, 'abc': { cleared: true, coins: 1 },
+      '2': { cleared: false, coins: 3 }, '3': { cleared: true, coins: 2, stars: 9 } } }), STAGES);
+    row(mixed.ok && same(Object.keys(mixed.save.stages), ['1', '3']) && mixed.save.stages['1'].coins === 5 && mixed.save.stages['3'].stars === undefined && mixed.dropped === 3 && mixed.save.owner === '<b>x</b>',
+      '이상한 값은 걸러내고 나머지는 살려요', mixed.ok ? `남은 스테이지 ${Object.keys(mixed.save.stages)} · 없는 스테이지·망가진 기록 ${mixed.dropped}개 뺌 · 코인은 스테이지 코인 수까지만` : mixed.error);
+    const onlyOwner = parseImport(JSON.stringify({ app: 'platformer-save', v: 1, owner: '새 기기', stages: {} }), STAGES);
+    row(onlyOwner.ok && onlyOwner.save.owner === '새 기기', '이름만 있는 파일도 불러와요', '아직 스테이지를 안 깬 기록');
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 1, owner: '다른 사람', stages: {} }));
+    const rep = replaceSave(back.save);
+    row(rep.saved && same(loadSave(), cur), '바꾸기를 하면 파일의 기록이 돼요', '지금 기록이 파일의 기록으로 통째로 바뀌어요.');
   } finally {
     try { backup === null ? localStorage.removeItem(SAVE_KEY) : localStorage.setItem(SAVE_KEY, backup); } catch (e) {}
   }
@@ -337,6 +371,92 @@ async function run() {
       row(stored.stages['1'].time === 1000, '브라우저에 저장된 시간', `stages.1.time = ${stored.stages['1'].time} (1/100초)`);
     } catch (e) {
       skip('게임 화면에서 최고기록', '게임 화면을 이 페이지 안에서 열 수 없었어요: ' + e.message);
+    } finally {
+      try { if (ls) { saved === null ? ls.removeItem(SAVE_KEY) : ls.setItem(SAVE_KEY, saved); } } catch (e) {}
+      if (f) f.remove();
+    }
+  }
+
+  // 7. 게임 화면에서 기록 내보내기·불러오기 (진짜 단추를 눌러 봄. 파일 내려받기는 가로채서 내용만 읽음. 진짜 기록은 빌려 쓰고 돌려놓음)
+  if (html !== null) {
+    let f = null, ls = null, saved = null;
+    try {
+      f = await loadFrame('../index.html', 800);
+      const win = f.contentWindow, doc = f.contentDocument;
+      ls = win.localStorage;
+      saved = ls.getItem(SAVE_KEY);
+      ls.removeItem(SAVE_KEY);
+      const $$ = (id) => doc.getElementById(id);
+      const text = (id) => $$(id).innerText.replace(/\s+/g, ' ');
+      const waitFor = async (fn, ms = 3000) => {
+        const end = Date.now() + ms;
+        while (Date.now() < end) { if (fn()) return true; await new Promise(r => setTimeout(r, 50)); }
+        return !!fn();
+      };
+      const sendFile = (content) => {
+        const dt = new win.DataTransfer();
+        dt.items.add(new win.File([content], 'record.json', { type: 'application/json' }));
+        $$('import-file').files = dt.files;
+        $$('import-file').dispatchEvent(new win.Event('change'));
+      };
+      const stored = () => JSON.parse(ls.getItem(SAVE_KEY));
+
+      // 이름 정하는 첫 화면에서도 불러오기가 보여요
+      win.eval("save = loadSave(); show('name');");
+      row(!!doc.querySelector('#name-screen .io-import') && !$$('name-screen').hidden, '첫 화면(이름 정하기)에 기록 불러오기 단추', '다른 기기에서 쓰던 기록을 이름 정하기 전에 불러올 수 있어요.');
+
+      // 기록이 없을 때 내보내기
+      win.eval("showSelect();");
+      $$('export-btn').click();
+      row(!$$('io-msg').hidden && text('io-msg').includes('내보낼 기록이 없어요'), '기록이 없으면 내보내기를 안내해요', text('io-msg'));
+
+      // 내보내기: 다운로드를 가로채서 파일 내용을 읽는다
+      win.eval("save = setOwner('토끼'); recordClear(1, 5, 1100, 3); recordClear(2, 3, 1500, 2); save = loadSave(); showSelect();");
+      let blob = null, fileName = null;
+      win.URL.createObjectURL = (b) => { blob = b; return 'blob:check'; };
+      win.HTMLAnchorElement.prototype.click = function () { fileName = this.download; };
+      $$('export-btn').click();
+      const exported = blob ? parseImport(await blob.text(), STAGES) : { ok: false, error: '파일이 만들어지지 않았어요' };
+      row(exported.ok && exported.save.owner === '토끼' && exported.save.stages['1'].stars === 3 && exported.save.stages['2'].coins === 3 && /^platformer-record-\d{8}\.json$/.test(fileName),
+        '기록 내보내기 단추가 파일을 만들어요', exported.ok ? `${fileName} · 토끼 · 스테이지 ${Object.keys(exported.save.stages).length}개` : exported.error);
+      row(!$$('io-msg').hidden && text('io-msg').includes('저장했어요'), '내보낸 뒤 안내 글', text('io-msg'));
+
+      // 불러오기: 다른 기록이 든 파일
+      const other = makeExportText({ v: 1, owner: '고양이', stages: {
+        '1': { cleared: true, coins: 5, time: 900, stars: 3 }, '2': { cleared: true, coins: 7, time: 1200, stars: 3 }, '3': { cleared: true, coins: 9, time: 1500, stars: 3 } } });
+      sendFile(other);
+      const shown = await waitFor(() => !$$('import-panel').hidden);
+      const panel = shown ? text('import-panel') : '';
+      row(shown && panel.includes('토끼') && panel.includes('고양이') && panel.includes('바꾸면 지금 기록은 사라져요'), '불러오기 전에 지금 기록과 파일의 기록을 보여 줘요', panel);
+      row(stored().owner === '토끼', '확인하기 전에는 기록이 바뀌지 않아요', `저장된 이름: ${stored().owner}`);
+      $$('import-no').click();
+      row($$('import-panel').hidden && stored().owner === '토끼' && stored().stages['3'] === undefined, '취소하면 기록이 그대로예요', text('io-msg'));
+
+      sendFile(other);
+      await waitFor(() => !$$('import-panel').hidden);
+      $$('import-yes').click();
+      const after = stored();
+      row(after.owner === '고양이' && after.stages['3'].coins === 9 && after.stages['1'].time === 900, '바꾸기를 누르면 파일의 기록이 저장돼요', `이름 ${after.owner} · 스테이지 ${Object.keys(after.stages).length}개`);
+      row(!$$('select-screen').hidden && $$('who').textContent === '고양이' && $$('total').textContent.includes('21') && text('io-msg').includes('불러왔어요'), '불러온 뒤 화면이 바뀌어요', `${$$('who').textContent} · ${$$('total').textContent} · ${text('io-msg')}`);
+
+      // 잘못된 파일 → 이유를 보여 주고 기록은 그대로
+      for (const [label, content, word] of [['글자 파일', '이건 기록이 아니에요', '기록 파일이 아니에요'], ['더 새로운 버전 파일', JSON.stringify({ app: 'platformer-save', v: 2, owner: 'a', stages: {} }), '더 새로운 버전']]) {
+        $$('io-msg').textContent = '';
+        sendFile(content);
+        await waitFor(() => text('io-msg').includes(word));
+        row(text('io-msg').includes(word) && $$('import-panel').hidden && stored().owner === '고양이' && $$('io-msg').className.includes('bad'), `${label}을 거절하고 기록은 그대로`, text('io-msg'));
+      }
+
+      // 새 기기: 기록이 아무것도 없을 때 첫 화면에서 불러오기
+      ls.removeItem(SAVE_KEY);
+      win.eval("save = loadSave(); show('name');");
+      sendFile(other);
+      await waitFor(() => !$$('import-panel').hidden);
+      const fresh = text('import-panel');
+      $$('import-yes').click();
+      row(fresh.includes('지금 기록: 없음') && stored().owner === '고양이' && !$$('select-screen').hidden, '새 기기에서 이름 정하기 전에 불러오면 바로 이어 해요', fresh);
+    } catch (e) {
+      skip('게임 화면에서 기록 내보내기·불러오기', '게임 화면을 이 페이지 안에서 열 수 없었어요: ' + e.message);
     } finally {
       try { if (ls) { saved === null ? ls.removeItem(SAVE_KEY) : ls.setItem(SAVE_KEY, saved); } } catch (e) {}
       if (f) f.remove();

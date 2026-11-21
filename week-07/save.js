@@ -114,3 +114,51 @@ function isUnlocked(save, stageId) {
 function stageRecord(save, stageId) {
   return save.stages[String(stageId)] || null;
 }
+
+// ---------- 기록을 파일로 내보내기 · 불러오기 ----------
+// 파일 모양: { app: 'platformer-save', v: 1, exportedAt: '날짜', owner: '이름', stages: {...} }
+// 여기서는 글을 만들고 검사만 한다. 파일을 내려받고 고르는 화면은 index.html 에 있다.
+const EXPORT_APP = 'platformer-save';
+const EXPORT_MAX_CHARS = 200000;   // 이보다 큰 파일은 기록 파일이 아니라고 본다
+
+function makeExportText(save) {
+  return JSON.stringify({
+    app: EXPORT_APP, v: 1, exportedAt: new Date().toISOString(),
+    owner: save.owner, stages: save.stages,
+  }, null, 2);
+}
+
+// 파일 글을 검사한다. 성공하면 { ok: true, save, dropped, exportedAt }, 실패하면 { ok: false, error }.
+// 기록은 바꾸지 않는다. stageList 를 주면 없는 스테이지·넘치는 코인을 걸러낸다.
+function parseImport(text, stageList) {
+  if (typeof text !== 'string') return { ok: false, error: '파일을 읽지 못했어요.' };
+  if (text.length > EXPORT_MAX_CHARS) return { ok: false, error: '파일이 너무 커요. 이 게임의 기록 파일이 아니에요.' };
+  let raw;
+  try { raw = JSON.parse(text); } catch (e) { return { ok: false, error: '기록 파일이 아니에요. 읽을 수 없는 글이에요.' }; }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw) || raw.app !== EXPORT_APP) {
+    return { ok: false, error: '이 게임에서 내보낸 기록 파일이 아니에요.' };
+  }
+  if (raw.v !== 1) {
+    return { ok: false, error: raw.v > 1 ? '더 새로운 버전의 기록 파일이에요. 이 게임으로는 읽을 수 없어요.' : '지원하지 않는 기록 파일 버전이에요.' };
+  }
+  const stagesRaw = raw.stages && typeof raw.stages === 'object' && !Array.isArray(raw.stages) ? raw.stages : {};
+  const cleaned = cleanSave({ owner: raw.owner, stages: stagesRaw });
+  let dropped = Object.keys(stagesRaw).length - Object.keys(cleaned.stages).length;
+  if (Array.isArray(stageList)) {
+    for (const id of Object.keys(cleaned.stages)) {
+      const st = stageList[Number(id) - 1];
+      if (!st) { delete cleaned.stages[id]; dropped++; continue; }
+      if (cleaned.stages[id].coins > st.coins.length) cleaned.stages[id].coins = st.coins.length;
+    }
+  }
+  if (!cleaned.owner && Object.keys(cleaned.stages).length === 0) return { ok: false, error: '기록이 비어 있어요.' };
+  const when = typeof raw.exportedAt === 'string' && !isNaN(Date.parse(raw.exportedAt)) ? raw.exportedAt.slice(0, 10) : null;
+  return { ok: true, save: cleaned, dropped, exportedAt: when };
+}
+
+// 검사를 통과한 기록으로 지금 기록을 통째로 바꾼다 (화면에서 "바꾸기"를 눌렀을 때만 부른다)
+function replaceSave(save) {
+  const clean = cleanSave(save);
+  const saved = writeSave(clean);
+  return { save: clean, saved };
+}
