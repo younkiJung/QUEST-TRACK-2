@@ -34,7 +34,16 @@
   #wrap { position: relative; margin: 0 auto; }
   canvas { display: block; width: 100%; height: auto; border-radius: 8px; background: #8fd3ff; }
   #clear { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 12px; text-align: center; background: rgba(10, 16, 30, 0.82); border-radius: 8px; }
+  #clear { overflow: auto; justify-content: safe center; }
   #clear h2 { margin: 0; }
+  #clear-stars { font-size: 34px; line-height: 1.1; color: #ffd84d; letter-spacing: 4px; }
+  @media (max-width: 700px) {
+    #clear { gap: 3px; padding: 6px; font-size: 14px; }
+    #clear h2 { font-size: 18px; }
+    #clear-stars { font-size: 26px; }
+    #clear .note { font-size: 12px; }
+    #clear button { font-size: 14px; padding: 6px 12px; }
+  }
   #clear .row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
   .pad { position: absolute; bottom: 10px; width: 64px; height: 64px; border-radius: 50%; border: 2px solid rgba(255,255,255,.7); background: rgba(20, 26, 39, .45); color: #fff; font-size: 26px; touch-action: none; user-select: none; -webkit-user-select: none; display: none; }
   #pad-left { left: 10px; } #pad-right { left: 84px; } #pad-jump { right: 10px; width: 76px; height: 76px; }
@@ -145,7 +154,7 @@ function showSelect() {
     title.textContent = `스테이지 ${s.id} · ${s.name}`;
     const info = document.createElement('span');
     info.textContent = !open ? '🔒 앞 스테이지를 먼저 깨요'
-      : rec ? `✅ 깼어요 · 코인 ${rec.coins}/${s.coins.length}` + (rec.time ? ` · 최고 ${formatTime(rec.time)}초` : '') : '아직 안 깼어요';
+      : rec ? `✅ 깼어요 · 별 ${starText(rec.stars || 1)} · 코인 ${rec.coins}/${s.coins.length}` + (rec.time ? ` · 최고 ${formatTime(rec.time)}초` : '') : '아직 안 깼어요';
     const level = document.createElement('span');
     level.className = 'level';
     level.textContent = `난이도 ${'★'.repeat(s.level)}${'☆'.repeat(3 - s.level)} · ${s.hint}`;
@@ -189,9 +198,14 @@ function formatTime(cs) {
   return (cs / 100).toFixed(2);
 }
 
+// 별 3칸 글: 2개면 "★★☆"
+function starText(n) {
+  return '★'.repeat(n) + '☆'.repeat(3 - n);
+}
+
 function updateHud() {
   const n = run.got.filter(Boolean).length;
-  $('hud').textContent = `스테이지 ${run.stage.id} · ${run.stage.name} · 🪙 ${n}/${run.stage.coins.length} · ⏱ ${(run.t / 60).toFixed(1)}초`;
+  $('hud').textContent = `스테이지 ${run.stage.id} · ${run.stage.name} · 🪙 ${n}/${run.stage.coins.length} · ⏱ ${(run.t / 60).toFixed(1)}초 / 목표 ${run.stage.par}초`;
 }
 
 function update() {
@@ -214,7 +228,8 @@ function finish() {
   const got = run.got.filter(Boolean).length;
   const total = run.stage.coins.length;
   const cs = Math.round(run.t / 60 * 100);   // 걸린 시간 (1/100초)
-  const r = recordClear(run.stage.id, got, cs);
+  const rating = calcStars(run.stage, got, cs);   // 이번 판의 별
+  const r = recordClear(run.stage.id, got, cs, rating.stars);
   save = r.save;
   refreshHeader();
   const box = $('clear');
@@ -237,7 +252,20 @@ function finish() {
   if (next) row.append(mk('다음 스테이지', () => startStage(next), 'big'));
   row.append(mk('다시 하기', () => startStage(run.stage), next ? 'ghost' : 'big'));
   row.append(mk('스테이지 고르기', showSelect, 'ghost'));
-  box.append(h, info, timeBox);
+  const starBox = document.createElement('div');
+  starBox.id = 'clear-stars';
+  starBox.textContent = starText(rating.stars);
+  starBox.setAttribute('aria-label', `별 ${rating.stars}개`);
+  const cond1 = document.createElement('div');
+  cond1.textContent = `${rating.allCoins ? '✅' : '⬜'} 코인 다 모으기 (${got}/${total})`;
+  const cond2 = document.createElement('div');
+  cond2.textContent = `${rating.fast ? '✅' : '⬜'} ${run.stage.par}초 안에 깨기 (${formatTime(cs)}초)`;
+  const starNote = document.createElement('div');
+  starNote.className = 'note';
+  starNote.textContent = r.starsImproved
+    ? (r.prevStars ? `별 기록을 늘렸어요 (이전 ${starText(r.prevStars)})` : '별 기록이 처음 남았어요')
+    : `별 최고기록은 ${starText(r.bestStars || rating.stars)}이에요`;
+  box.append(h, starBox, cond1, cond2, starNote, info, timeBox);
   if (!next) { const all = document.createElement('div'); all.textContent = '마지막 스테이지까지 모두 깼어요!'; box.append(all); }
   box.append(row);
   if (!r.saved) { const w = document.createElement('div'); w.className = 'note'; w.textContent = '이 브라우저가 저장을 막고 있어서 기록이 남지 않아요.'; box.append(w); }

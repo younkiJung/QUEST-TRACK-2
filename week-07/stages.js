@@ -1,5 +1,6 @@
 // 스테이지 정보. 스테이지를 늘리거나 고칠 때는 이 파일만 바꾸면 된다 (게임 코드는 그대로).
 //   id: 1부터 차례로 / name: 이름 / level: 난이도 1~3 (카드에 ★로 보임) / hint: 한 줄 설명
+//   par: 목표 시간(초). 이 안에 깨면 별 +1 (별 계산은 맨 아래 calcStars)
 //   width: 스테이지 가로 길이 / start: 시작 자리 / platforms: 발판 / coins: 코인 / goal: 깃발
 //   발판은 {x, y, w, h}, 코인은 {x, y}, 깃발은 {x, y, w, h}. 땅 높이는 390, 화면 높이는 450.
 // 점점 어렵게: 뒤로 갈수록 길고, 코인이 많고, 구멍이 많고 넓고, 떠 있는 발판이 좁다. (check/index.html 이 확인한다)
@@ -9,7 +10,7 @@ function plat(x, y, w) { return { x, y, w, h: 20 }; }
 
 const STAGES = [
   {
-    id: 1, name: '풀밭', level: 1, hint: '넓은 땅에서 구멍 두 개를 건너뛰어 봐요',
+    id: 1, name: '풀밭', level: 1, par: 12, hint: '넓은 땅에서 구멍 두 개를 건너뛰어 봐요',
     width: 2000, start: { x: 40, y: 350 },
     platforms: [
       ground(0, 520), ground(620, 480), ground(1200, 800),
@@ -19,7 +20,7 @@ const STAGES = [
     goal: { x: 1900, y: 330, w: 30, h: 60 },
   },
   {
-    id: 2, name: '바위 길', level: 2, hint: '구멍이 이어져요. 징검다리를 연달아 뛰어요',
+    id: 2, name: '바위 길', level: 2, par: 15, hint: '구멍이 이어져요. 징검다리를 연달아 뛰어요',
     width: 2400, start: { x: 40, y: 350 },
     platforms: [
       ground(0, 400), ground(520, 200), ground(1400, 300), ground(2150, 250),
@@ -31,7 +32,7 @@ const STAGES = [
     goal: { x: 2320, y: 330, w: 30, h: 60 },
   },
   {
-    id: 3, name: '구름 다리', level: 3, hint: '좁은 발판과 넓은 구멍. 높이 올라가는 곳도 있어요',
+    id: 3, name: '구름 다리', level: 3, par: 18, hint: '좁은 발판과 넓은 구멍. 높이 올라가는 곳도 있어요',
     width: 2800, start: { x: 40, y: 350 },
     platforms: [
       ground(0, 300), ground(1940, 300), ground(2650, 150),
@@ -45,3 +46,11 @@ const STAGES = [
     goal: { x: 2740, y: 330, w: 30, h: 60 },
   },
 ];
+
+// 별 계산 (한 판 안에서): 깼으면 1개, 코인을 전부 모았으면 +1, 목표 시간(par) 안에 깼으면 +1.
+// coins: 이번 판에 모은 코인 개수, cs: 걸린 시간 (1/100초)
+function calcStars(stage, coins, cs) {
+  const allCoins = coins >= stage.coins.length;
+  const fast = cs <= stage.par * 100;
+  return { stars: 1 + (allCoins ? 1 : 0) + (fast ? 1 : 0), allCoins, fast };
+}

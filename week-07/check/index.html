@@ -140,6 +140,26 @@ async function run() {
     localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 1, owner: 'x', stages: { '1': { cleared: true, coins: 1, time: -5 }, '2': { cleared: true, coins: 1, time: 'abc' }, '3': { cleared: true, coins: 1, time: 12.5 } } }));
     const badTime = loadSave();
     row(['1', '2', '3'].every(k => badTime.stages[k] && badTime.stages[k].time === undefined), '이상한 시간 걸러내기', '음수·글자·소수는 버리고 나머지 기록은 살려요.');
+
+    // 별 (한 판 안에서 정해진 별 개수의 최고)
+    localStorage.removeItem(SAVE_KEY);
+    const s1 = recordClear(1, 3, 2000, 1);
+    row(s1.starsImproved && s1.prevStars === 0 && loadSave().stages['1'].stars === 1, '처음 깨면 그 별이 저장돼요', '별 1개');
+    const s2 = recordClear(1, 5, 1100, 3);
+    row(s2.starsImproved && s2.prevStars === 1 && loadSave().stages['1'].stars === 3, '별을 더 받으면 늘어요', '1개 → 3개');
+    const s3 = recordClear(1, 2, 3000, 1);
+    row(!s3.starsImproved && s3.bestStars === 3 && loadSave().stages['1'].stars === 3, '별이 적으면 최고 별 그대로', '1개로 깼어도 3개 유지');
+    const s4 = recordClear(1, 5, 1100);
+    row(!s4.starsImproved && loadSave().stages['1'].stars === 3, '별을 안 주면 별을 건드리지 않아요', '3개 유지');
+    recordClear(2, 4, 900, 2);
+    row(loadSave().stages['1'].stars === 3 && loadSave().stages['2'].stars === 2, '스테이지마다 따로 저장', '1번 별 3개 · 2번 별 2개');
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 1, owner: '옛', stages: { '1': { cleared: true, coins: 2, time: 1500 } } }));
+    row(loadSave().stages['1'].stars === undefined && recordClear(1, 2, 1500, 1).starsImproved === true, '별이 없던 옛 기록', '읽을 수 있고 코인·시간은 그대로예요. 다음에 깨면 별이 저장돼요.');
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 1, owner: 'x', stages: { '1': { cleared: true, coins: 1, stars: 0 }, '2': { cleared: true, coins: 1, stars: 4 }, '3': { cleared: true, coins: 1, stars: 'abc' } } }));
+    const badStars = loadSave();
+    row(['1', '2', '3'].every(k => badStars.stages[k] && badStars.stages[k].stars === undefined && badStars.stages[k].coins === 1), '이상한 별 걸러내기', '0·4·글자는 버리고 나머지 기록은 살려요.');
+    const vs = recordClear(1, 1, 1000, 9);
+    row(!vs.starsImproved && vs.bestStars === null, '별 개수가 이상하게 들어와도', '1~3이 아니면 저장하지 않아요.');
   } finally {
     try { backup === null ? localStorage.removeItem(SAVE_KEY) : localStorage.setItem(SAVE_KEY, backup); } catch (e) {}
   }
@@ -220,6 +240,26 @@ async function run() {
   });
   row(shapeOk, '스테이지 데이터 모양', '시작 자리는 발판 바로 위(30 안)에 있고, 깃발은 발판 위·스테이지 안에 있고, 코인이 겹치지 않아요.');
 
+  // 4-3. 별 계산 (스테이지 1: 코인 5개, 목표 12초)
+  {
+    const st = STAGES[0];
+    const cases = [
+      [5, 1100, 3, '코인 다 + 빨리'], [5, 1300, 2, '코인 다 + 느림'], [4, 1100, 2, '코인 모자람 + 빨리'], [4, 1300, 1, '코인 모자람 + 느림'],
+      [5, 1200, 3, '딱 목표 시간(12.00초)은 빠른 걸로 쳐요'], [5, 1201, 2, '12.01초는 느린 걸로 쳐요'], [0, 100, 2, '코인 0개여도 빠르면 별 2개'],
+    ];
+    const wrong = cases.filter(([c, t, want]) => calcStars(st, c, t).stars !== want);
+    row(wrong.length === 0, '별 계산', wrong.length ? '틀린 것: ' + wrong.map(b => b[3]).join(', ') : cases.map(c => `${c[3]} → ${c[2]}`).join(' · '));
+  }
+  const parOk = STAGES.every(st => Number.isFinite(st.par) && st.par > 0);
+  row(parOk && STAGES.every((st, i) => i === 0 || st.par > STAGES[i - 1].par), '목표 시간이 있고 점점 길어져요', STAGES.map(st => st.par + '초').join(' < '));
+  for (const st of STAGES) {
+    const bot = tryBot(st);
+    const seconds = bot.frames / 60;
+    const three = bot.ok && bot.coins === st.coins.length && seconds <= st.par;
+    row(three, `스테이지 ${st.id} 별 3개를 받을 수 있어요`, `로봇이 코인 ${bot.coins}/${st.coins.length}개를 먹고 ${seconds.toFixed(1)}초에 깼어요 (목표 ${st.par}초)`);
+    row(st.par >= seconds * 1.3 && st.par <= seconds * 2.5, `스테이지 ${st.id} 목표 시간이 알맞아요`, `로봇 기록의 ${(st.par / seconds).toFixed(2)}배 (1.3~2.5배면 사람이 해 볼 만해요)`);
+  }
+
   // 5. 게임 화면 (파일 내용과 모양)
   let html = null;
   try { html = await (await fetch('../index.html')).text(); } catch (e) {}
@@ -274,6 +314,22 @@ async function run() {
       win.eval('showSelect()');
       const card = f.contentDocument.querySelector('#cards .card').innerText;
       row(card.includes('최고 10.00초'), '스테이지 고르는 화면에 최고기록', card.replace(/\s+/g, ' '));
+      // 별: 코인을 다 모은 판으로 깬 것처럼 만들어 본다 (스테이지 1, 코인 5개, 목표 12초)
+      const clearFull = (frames, all) => win.eval(`save = loadSave(); startStage(STAGES[0]); run.t = ${frames}; run.got.fill(${all}); finish(); document.getElementById('clear').innerText`);
+      const star3 = clearFull(600, true);      // 600프레임 = 10초 + 코인 다 → 별 3
+      row(star3.includes('★★★') && star3.includes('✅ 코인 다 모으기 (5/5)') && star3.includes('✅ 12초 안에 깨기 (10.00초)'), '별 3개 화면', star3.replace(/\s+/g, ' '));
+      const star2 = clearFull(900, true);      // 900프레임 = 15초 + 코인 다 → 별 2
+      row(star2.includes('★★☆') && star2.includes('✅ 코인 다 모으기') && star2.includes('⬜ 12초 안에 깨기 (15.00초)') && star2.includes('별 최고기록은 ★★★'), '별 2개 화면 (못 받은 칸은 ⬜)', star2.replace(/\s+/g, ' '));
+      const star1 = clearFull(1200, false);    // 1200프레임 = 20초 + 코인 없음 → 별 1
+      row(star1.includes('★☆☆') && star1.includes('⬜ 코인 다 모으기 (0/5)') && star1.includes('⬜ 12초 안에 깨기'), '별 1개 화면', star1.replace(/\s+/g, ' '));
+      win.eval('showSelect()');
+      const starCard = f.contentDocument.querySelector('#cards .card').innerText.replace(/\s+/g, ' ');
+      row(starCard.includes('별 ★★★'), '스테이지 카드에 최고 별', starCard);
+      const storedStars = JSON.parse(ls.getItem(SAVE_KEY)).stages['1'].stars;
+      row(storedStars === 3, '브라우저에 저장된 별', `stages.1.stars = ${storedStars}`);
+      const hudText = win.eval(`startStage(STAGES[1]); updateHud(); document.getElementById('hud').innerText`);
+      row(hudText.includes('목표 15초'), '플레이 중 목표 시간 표시', hudText);
+      win.eval('showSelect()');
       const cardTexts = [...f.contentDocument.querySelectorAll('#cards .card')].map(c => c.innerText.replace(/\s+/g, ' '));
       row(cardTexts.length === 3 && cardTexts.every((t, i) => t.includes('난이도 ' + '★'.repeat(i + 1) + '☆'.repeat(2 - i)) && t.includes(STAGES[i].hint)),
         '스테이지 카드에 난이도와 설명', cardTexts.map(t => t.slice(0, 40)).join(' / '));

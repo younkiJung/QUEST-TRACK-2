@@ -28,6 +28,8 @@ function cleanSave(raw) {
       out.stages[id] = { cleared: true, coins };
       // 최고기록(가장 빠른 시간)은 1/100초 단위 정수. 없거나 이상하면 빼고 읽는다
       if (Number.isInteger(s.time) && s.time > 0 && s.time <= 599999) out.stages[id].time = s.time;
+      // 별(1~3)은 한 판 안에서 정해지므로 가장 많이 받은 개수를 따로 저장한다
+      if (Number.isInteger(s.stars) && s.stars >= 1 && s.stars <= 3) out.stages[id].stars = s.stars;
     }
   }
   return out;
@@ -73,7 +75,8 @@ function setOwner(name) {
 
 // 스테이지를 깼을 때 부른다. 코인은 더 많이 모았을 때만 늘려 저장한다.
 // time (1/100초) 을 주면 더 빠를 때만 최고기록으로 바꿔 저장한다. 안 주면 시간은 건드리지 않는다.
-function recordClear(stageId, coins, time) {
+// stars (1~3) 를 주면 더 많을 때만 바꿔 저장한다. 안 주면 별은 건드리지 않는다.
+function recordClear(stageId, coins, time, stars) {
   const save = loadSave();
   const key = String(stageId);
   const before = save.stages[key];
@@ -89,9 +92,14 @@ function recordClear(stageId, coins, time) {
   } else if (prevTime !== null) {
     entry.time = prevTime;
   }
+  const prevStars = before && before.stars ? before.stars : 0;
+  const validStars = Number.isInteger(stars) && stars >= 1 && stars <= 3;
+  const bestStars = validStars ? Math.max(prevStars, stars) : prevStars;
+  if (bestStars) entry.stars = bestStars;
   save.stages[key] = entry;
   const saved = writeSave(save);
-  return { save, firstClear, improved: !firstClear && coins > prev, prev, saved, newBest, prevTime, bestTime: entry.time || null };
+  return { save, firstClear, improved: !firstClear && coins > prev, prev, saved, newBest, prevTime, bestTime: entry.time || null,
+           starsImproved: validStars && stars > prevStars, prevStars, bestStars: bestStars || null };
 }
 
 function totalCoins(save) {
